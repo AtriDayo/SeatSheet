@@ -1,8 +1,8 @@
 seats.atridayo.com {
-  reverse_proxy 127.0.0.1:30080
+  reverse_proxy 127.0.0.1:8080
 }
 
 seats-config.atridayo.com {
   redir / /config 302
-  reverse_proxy 127.0.0.1:30080
+  reverse_proxy 127.0.0.1:8080
 }

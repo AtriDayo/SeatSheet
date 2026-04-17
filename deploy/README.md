@@ -42,10 +42,10 @@ Start services:
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-The frontend is exposed on host port `30080` by default:
+The frontend is exposed on host port `8080` by default:
 
-- Display: `http://YOUR_VPS_IP:30080/`
-- Config: `http://YOUR_VPS_IP:30080/config`
+- Display: `http://YOUR_VPS_IP:8080/`
+- Config: `http://YOUR_VPS_IP:8080/config`
 
 Run migrations:
 
@@ -62,7 +62,7 @@ DATABASE_URL="postgresql://seatsheet:seatsheet_change_me@YOUR_VPS_IP:5432/seatsh
 
 ## 3. Reverse Proxy
 
-The app container listens on `127.0.0.1:30080` from the VPS perspective.
+The app container listens on `127.0.0.1:8080` from the VPS perspective.
 
 Use either:
 
@@ -71,7 +71,7 @@ Use either:
 
 For HTTPS, install a certificate with Certbot if using Nginx, or let Caddy issue certificates automatically.
 
-If your VPS provider blocks unregistered domains or common web ports, DNS-only records cannot remove the need for a port. Without usable `80` or `443`, access URLs must include the port, such as `http://seats.atridayo.com:30080/`. To use `https://seats.atridayo.com/` without a port on a mainland China VPS, you usually need ICP filing for the domain, a provider-approved web port, or a different network path such as an overseas VPS or Cloudflare Tunnel/proxy.
+If your VPS provider blocks unregistered domains or common web ports, DNS-only records cannot remove the need for a port. Without usable `80` or `443`, access URLs must include the port, such as `http://seats.atridayo.com:8080/`. To use `https://seats.atridayo.com/` without a port on a mainland China VPS, you usually need ICP filing for the domain, a provider-approved web port, or a different network path such as an overseas VPS or Cloudflare Tunnel/proxy.
 
 ## 4. URL Plan
 
@@ -82,8 +82,8 @@ The simplest production layout is:
 
 If `80` and `443` are unavailable, use:
 
-- Display: `http://seats.atridayo.com:30080/`
-- Config: `http://seats.atridayo.com:30080/config`
+- Display: `http://seats.atridayo.com:8080/`
+- Config: `http://seats.atridayo.com:8080/config`
 
 If you prefer a separated config subdomain:
 
