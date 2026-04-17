@@ -2,7 +2,79 @@
 
 This project is ready for a single VPS deployment with Docker Compose.
 
-## 1. DNS
+Recommended production flow: pull the published Docker images and run them with Docker Compose. This avoids slow or memory-heavy `npm install` and Docker builds on small VPS instances.
+
+## 1. Recommended: Deploy Prebuilt Docker Hub Images
+
+The default production compose file uses these published images:
+
+- `atridayo/seatsheet-backend:latest`
+- `atridayo/seatsheet-frontend:latest`
+
+### First VPS Install
+
+Install Docker on the VPS, then run:
+
+```bash
+cd ~
+git clone https://github.com/AtriDayo/SeatSheet.git
+cd SeatSheet
+cp deploy/.env.prod.example deploy/.env.prod
+nano deploy/.env.prod
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml pull
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exec backend npm run prisma:deploy
+```
+
+Edit `deploy/.env.prod` before the first `up`:
+
+- `DOCKER_IMAGE_NAMESPACE`: keep `atridayo` unless you publish your own image fork.
+- `SEATSHEET_IMAGE_TAG`: use `latest` unless you want a specific commit SHA tag.
+- `FRONTEND_PORT`: defaults to `8080`.
+- `POSTGRES_PASSWORD`: choose a strong password before the database volume is initialized.
+- `CORS_ORIGIN`: keep it aligned with your production domains.
+
+### Switch From The Old Local-Build Deployment
+
+If the old local-build compose file is already running, stop it first:
+
+```bash
+cd ~/SeatSheet
+docker compose -f deploy/docker-compose.yml down
+```
+
+Do not add `-v` unless you intentionally want to delete the PostgreSQL volume and all seat data.
+
+Then start the prebuilt-image deployment:
+
+```bash
+git pull
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml pull
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exec backend npm run prisma:deploy
+```
+
+### Later Updates
+
+After a new release image is published, run:
+
+```bash
+cd ~/SeatSheet
+git pull
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml pull
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exec backend npm run prisma:deploy
+```
+
+### Useful Checks
+
+```bash
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml ps
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml logs -f backend frontend
+curl -I http://127.0.0.1:8080/
+```
+
+## 2. DNS
 
 In Cloudflare, create DNS-only records:
 
@@ -12,53 +84,6 @@ In Cloudflare, create DNS-only records:
 | A | `seats-config` | Your VPS IPv4 |
 
 Keep the proxy status as DNS only if you want Cloudflare to only resolve the domain name.
-
-## 2. Server
-
-Install Docker and Docker Compose on the VPS, then clone the project.
-
-For mainland China VPS builds, configure Docker image mirrors first:
-
-```bash
-sudo mkdir -p /etc/docker
-sudo cp deploy/docker-daemon-cn.example.json /etc/docker/daemon.json
-sudo systemctl daemon-reload
-sudo systemctl restart docker
-```
-
-The Dockerfiles already avoid apt installs during backend builds and use these mainland China mirrors:
-
-- npm: `https://registry.npmmirror.com`
-- Prisma engines: `https://registry.npmmirror.com/-/binary/prisma`
-
-Update `deploy/docker-compose.yml` before production:
-
-- Replace `seatsheet_change_me` with a strong database password.
-- Keep `CORS_ORIGIN` aligned with your real domains.
-
-Start services:
-
-```bash
-docker compose -f deploy/docker-compose.yml up -d --build
-```
-
-The frontend is exposed on host port `8080` by default:
-
-- Display: `http://YOUR_VPS_IP:8080/`
-- Config: `http://YOUR_VPS_IP:8080/config`
-
-Run migrations:
-
-```bash
-docker compose -f deploy/docker-compose.yml exec backend npm run prisma:deploy
-```
-
-Optional seed:
-
-```bash
-npm install --registry=https://registry.npmmirror.com
-DATABASE_URL="postgresql://seatsheet:seatsheet_change_me@YOUR_VPS_IP:5432/seatsheet?schema=public" npm run prisma:seed --workspace backend
-```
 
 ## 3. Reverse Proxy
 
@@ -92,36 +117,45 @@ If you prefer a separated config subdomain:
 
 The example reverse proxy redirects `seats-config.atridayo.com/` to `/config` on the same frontend app.
 
-## 5. Deploy Prebuilt Docker Hub Images
+## 5. Fallback: Build On The VPS
 
-GitHub Actions builds and pushes these images when code is pushed to `main`:
+Use this only when you cannot use Docker Hub images. It runs `npm install` and builds images on the VPS.
 
-- `DOCKERHUB_USERNAME/seatsheet-backend:latest`
-- `DOCKERHUB_USERNAME/seatsheet-frontend:latest`
+For mainland China VPS builds, configure Docker image mirrors first:
 
-Add these GitHub repository secrets before using the workflow:
+```bash
+sudo mkdir -p /etc/docker
+sudo cp deploy/docker-daemon-cn.example.json /etc/docker/daemon.json
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
 
-- `DOCKERHUB_USERNAME`: your Docker Hub username, usually lowercase.
+Start services from source:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d --build
+docker compose -f deploy/docker-compose.yml exec backend npm run prisma:deploy
+```
+
+Optional seed:
+
+```bash
+npm install --registry=https://registry.npmmirror.com
+DATABASE_URL="postgresql://seatsheet:seatsheet_change_me@YOUR_VPS_IP:5432/seatsheet?schema=public" npm run prisma:seed --workspace backend
+```
+
+## 6. Maintainer: Publish Images
+
+This section is only for maintainers who publish the official images.
+
+Create these Docker Hub repositories:
+
+- `seatsheet-backend`
+- `seatsheet-frontend`
+
+Create a Docker Hub access token, then add these GitHub repository secrets:
+
+- `DOCKERHUB_USERNAME`: the Docker Hub username or organization.
 - `DOCKERHUB_TOKEN`: a Docker Hub access token with permission to push images.
 
-On the VPS, deploy prebuilt images instead of building locally:
-
-```bash
-cd ~/SeatSheet
-git pull
-cp deploy/.env.prod.example deploy/.env.prod
-nano deploy/.env.prod
-docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml pull
-docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
-docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exec backend npm run prisma:deploy
-```
-
-For later updates, push to `main`, wait for GitHub Actions to finish, then run:
-
-```bash
-cd ~/SeatSheet
-git pull
-docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml pull
-docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
-docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exec backend npm run prisma:deploy
-```
+GitHub Actions builds and pushes the images when code is pushed to `main`.

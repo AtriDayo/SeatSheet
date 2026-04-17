@@ -5,7 +5,63 @@ SeatSheet is a minimal seat chart display and management app.
 - Frontend: Vue 3, TypeScript, Tailwind CSS
 - Backend: Fastify, Prisma
 - Database: PostgreSQL
-- Deployment target: VPS with Docker Compose and Cloudflare DNS-only records
+- Recommended deployment: pull prebuilt Docker images and run them with Docker Compose.
+
+## Recommended Deployment
+
+Use this path for VPS deployment. It avoids running `npm install` and image builds on a small VPS.
+
+### 1. Install On The VPS
+
+Install Docker, then pull and run the published images:
+
+```bash
+cd ~
+git clone https://github.com/AtriDayo/SeatSheet.git
+cd SeatSheet
+cp deploy/.env.prod.example deploy/.env.prod
+nano deploy/.env.prod
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml pull
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exec backend npm run prisma:deploy
+```
+
+Edit `deploy/.env.prod` before the first `up`. Keep `DOCKER_IMAGE_NAMESPACE=atridayo` unless you publish your own image fork. Set `POSTGRES_PASSWORD` before the first database start and keep it stable afterward.
+
+The app listens on `127.0.0.1:8080` from the VPS perspective. Put Caddy or Nginx in front of it for HTTPS:
+
+```caddyfile
+seats.atridayo.com {
+  reverse_proxy 127.0.0.1:8080
+}
+```
+
+### 2. Update Later
+
+After a new release image is published, run on the VPS:
+
+```bash
+cd ~/SeatSheet
+git pull
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml pull
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exec backend npm run prisma:deploy
+```
+
+If you previously used the local-build compose file, stop it once before switching:
+
+```bash
+docker compose -f deploy/docker-compose.yml down
+```
+
+Do not add `-v` unless you intentionally want to delete the database.
+
+### 3. Published Images
+
+The default production compose file uses:
+
+- `atridayo/seatsheet-backend:latest`
+- `atridayo/seatsheet-frontend:latest`
 
 ## Local Setup
 
