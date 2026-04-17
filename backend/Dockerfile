@@ -1,8 +1,7 @@
-FROM node:22-bookworm-slim AS deps
+FROM node:22-bookworm AS deps
 WORKDIR /app
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
+ENV PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
 COPY backend/package.json package.json
 RUN npm install
 
@@ -12,12 +11,11 @@ COPY backend .
 RUN npm run prisma:generate
 RUN npm run build
 
-FROM node:22-bookworm-slim AS runner
+FROM node:22-bookworm AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
+ENV PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
 COPY backend/package.json package.json
 RUN npm install --omit=dev
 COPY --from=build /app/dist dist

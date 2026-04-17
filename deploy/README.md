@@ -17,6 +17,20 @@ Keep the proxy status as DNS only if you want Cloudflare to only resolve the dom
 
 Install Docker and Docker Compose on the VPS, then clone the project.
 
+For mainland China VPS builds, configure Docker image mirrors first:
+
+```bash
+sudo mkdir -p /etc/docker
+sudo cp deploy/docker-daemon-cn.example.json /etc/docker/daemon.json
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+The Dockerfiles already avoid apt installs during backend builds and use these mainland China mirrors:
+
+- npm: `https://registry.npmmirror.com`
+- Prisma engines: `https://registry.npmmirror.com/-/binary/prisma`
+
 Update `deploy/docker-compose.yml` before production:
 
 - Replace `seatsheet_change_me` with a strong database password.
@@ -42,7 +56,7 @@ docker compose -f deploy/docker-compose.yml exec backend npm run prisma:deploy
 Optional seed:
 
 ```bash
-npm install
+npm install --registry=https://registry.npmmirror.com
 DATABASE_URL="postgresql://seatsheet:seatsheet_change_me@YOUR_VPS_IP:5432/seatsheet?schema=public" npm run prisma:seed --workspace backend
 ```
 
