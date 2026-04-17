@@ -6,7 +6,7 @@ RUN npm install
 
 FROM deps AS build
 WORKDIR /app
-ARG VITE_API_BASE_URL=/api
+ARG VITE_API_BASE_URL=
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 COPY frontend .
 RUN npm run build

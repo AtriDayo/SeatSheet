@@ -1,9 +1,20 @@
 import type { EditableSeatPlan, SeatPlan } from "../types/seat";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000").replace(
+  /\/$/,
+  ""
+);
+
+function apiPath(path: string) {
+  if (API_BASE_URL.endsWith("/api") && path.startsWith("/api/")) {
+    return `${API_BASE_URL}${path.slice(4)}`;
+  }
+
+  return `${API_BASE_URL}${path}`;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(apiPath(path), {
     headers: {
       "Content-Type": "application/json",
       ...init?.headers
