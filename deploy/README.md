@@ -91,3 +91,37 @@ If you prefer a separated config subdomain:
 - Config: `https://seats-config.atridayo.com/`
 
 The example reverse proxy redirects `seats-config.atridayo.com/` to `/config` on the same frontend app.
+
+## 5. Deploy Prebuilt Docker Hub Images
+
+GitHub Actions builds and pushes these images when code is pushed to `main`:
+
+- `DOCKERHUB_USERNAME/seatsheet-backend:latest`
+- `DOCKERHUB_USERNAME/seatsheet-frontend:latest`
+
+Add these GitHub repository secrets before using the workflow:
+
+- `DOCKERHUB_USERNAME`: your Docker Hub username, usually lowercase.
+- `DOCKERHUB_TOKEN`: a Docker Hub access token with permission to push images.
+
+On the VPS, deploy prebuilt images instead of building locally:
+
+```bash
+cd ~/SeatSheet
+git pull
+cp deploy/.env.prod.example deploy/.env.prod
+nano deploy/.env.prod
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml pull
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exec backend npm run prisma:deploy
+```
+
+For later updates, push to `main`, wait for GitHub Actions to finish, then run:
+
+```bash
+cd ~/SeatSheet
+git pull
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml pull
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exec backend npm run prisma:deploy
+```

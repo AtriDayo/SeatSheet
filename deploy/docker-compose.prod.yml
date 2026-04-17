@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: seatsheet
+      POSTGRES_USER: seatsheet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-seatsheet_change_me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    image: ${DOCKER_IMAGE_NAMESPACE:-atridayo}/seatsheet-backend:${SEATSHEET_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql://seatsheet:${POSTGRES_PASSWORD:-seatsheet_change_me}@postgres:5432/seatsheet?schema=public
+      PORT: 3000
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://seats.atridayo.com,https://seats-config.atridayo.com}
+
+  frontend:
+    image: ${DOCKER_IMAGE_NAMESPACE:-atridayo}/seatsheet-frontend:${SEATSHEET_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+
+volumes:
+  postgres_data:
