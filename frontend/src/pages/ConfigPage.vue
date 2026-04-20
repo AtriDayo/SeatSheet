@@ -178,8 +178,8 @@ onMounted(() => {
     </section>
   </main>
 
-  <main v-else class="min-h-screen bg-stone-100 px-5 py-8 text-stone-950">
-    <section class="mx-auto max-w-7xl">
+  <main v-else class="min-h-screen bg-stone-100 px-5 py-6 text-stone-950">
+    <section class="mx-auto max-w-6xl">
       <div class="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p class="text-sm text-stone-500">SeatSheet Config</p>
@@ -262,54 +262,54 @@ onMounted(() => {
         <p v-if="message" class="text-sm text-emerald-700">{{ message }}</p>
         <p v-if="error" class="text-sm text-red-700">{{ error }}</p>
 
-        <div class="flex items-stretch gap-3 overflow-x-auto pb-2">
+        <div class="flex items-stretch gap-3 pb-2">
           <div
             v-if="form.doorSide === 'left'"
-            class="flex min-w-20 flex-col justify-between gap-3 py-1"
+            class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1"
           >
-            <div class="rounded-lg border border-stone-300 bg-stone-950 px-3 py-4 text-center text-sm font-medium text-white shadow-sm">
+            <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
               前门
             </div>
             <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
-            <div class="rounded-lg border border-stone-300 bg-white px-3 py-4 text-center text-sm font-medium text-stone-800 shadow-sm">
+            <div class="rounded-lg border border-stone-300 bg-white px-2 py-3 text-center text-sm font-medium text-stone-800 shadow-sm">
               后门
             </div>
           </div>
 
           <div
-            class="grid min-w-max flex-1 gap-3"
-            :style="{ gridTemplateColumns: `repeat(${form.columns}, minmax(12rem, 1fr))` }"
+            class="grid min-w-0 flex-1 gap-2"
+            :style="{ gridTemplateColumns: `repeat(${form.columns}, minmax(0, 1fr))` }"
           >
             <div
               v-for="seat in sortedSeats"
               :key="`${seat.row}:${seat.column}`"
-              class="rounded-lg border border-stone-200 bg-white p-3 shadow-sm"
+              class="min-w-0 rounded-lg border border-stone-200 bg-white p-2 shadow-sm"
             >
-              <div class="mb-3 text-xs text-stone-500">
+              <div class="mb-2 truncate text-xs text-stone-500">
                 第 {{ seat.row + 1 }} 排 / 第 {{ seat.column + 1 }} 列
               </div>
               <input
                 v-model="seat.name"
                 placeholder="姓名"
-                class="mb-2 w-full rounded-lg border border-stone-300 px-3 py-2 outline-none transition focus:border-stone-950"
+                class="mb-2 w-full rounded-lg border border-stone-300 px-2 py-1.5 outline-none transition focus:border-stone-950"
               />
               <input
                 v-model="seat.studentNo"
                 placeholder="学号"
-                class="w-full rounded-lg border border-stone-300 px-3 py-2 outline-none transition focus:border-stone-950"
+                class="w-full rounded-lg border border-stone-300 px-2 py-1.5 outline-none transition focus:border-stone-950"
               />
             </div>
           </div>
 
           <div
             v-if="form.doorSide === 'right'"
-            class="flex min-w-20 flex-col justify-between gap-3 py-1"
+            class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1"
           >
-            <div class="rounded-lg border border-stone-300 bg-stone-950 px-3 py-4 text-center text-sm font-medium text-white shadow-sm">
+            <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
               前门
             </div>
             <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
-            <div class="rounded-lg border border-stone-300 bg-white px-3 py-4 text-center text-sm font-medium text-stone-800 shadow-sm">
+            <div class="rounded-lg border border-stone-300 bg-white px-2 py-3 text-center text-sm font-medium text-stone-800 shadow-sm">
               后门
             </div>
           </div>
