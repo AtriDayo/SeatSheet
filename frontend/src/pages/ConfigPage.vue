@@ -18,6 +18,7 @@ const form = reactive<EditableSeatPlan>({
   rows: 5,
   columns: 6,
   doorSide: "right",
+  aisleAfterColumns: [],
   seats: []
 });
 
@@ -25,8 +26,52 @@ const sortedSeats = computed(() =>
   [...form.seats].sort((a, b) => a.row - b.row || a.column - b.column)
 );
 
+const aisleOptions = computed(() =>
+  Array.from({ length: Math.max(form.columns - 1, 0) }, (_, index) => index)
+);
+
+const validAisleAfterColumns = computed(() =>
+  [...new Set(form.aisleAfterColumns)]
+    .filter((column) => column >= 0 && column < form.columns - 1)
+    .sort((a, b) => a - b)
+);
+
+const aisleColumnSet = computed(() => new Set(validAisleAfterColumns.value));
+
+const configGridTemplateColumns = computed(() => {
+  const tracks: string[] = [];
+
+  for (let column = 0; column < form.columns; column += 1) {
+    tracks.push("minmax(0, 1fr)");
+
+    if (aisleColumnSet.value.has(column)) {
+      tracks.push("minmax(1.75rem, 2rem)");
+    }
+  }
+
+  return tracks.join(" ");
+});
+
 function seatKey(seat: Pick<Seat, "row" | "column">) {
   return `${seat.row}:${seat.column}`;
+}
+
+function seatGridColumn(column: number) {
+  return column + 1 + validAisleAfterColumns.value.filter((aisleColumn) => aisleColumn < column).length;
+}
+
+function aisleGridColumn(column: number) {
+  return column + 2 + validAisleAfterColumns.value.filter((aisleColumn) => aisleColumn < column).length;
+}
+
+function hasAisleAfter(column: number) {
+  return aisleColumnSet.value.has(column);
+}
+
+function toggleAisle(column: number) {
+  form.aisleAfterColumns = hasAisleAfter(column)
+    ? form.aisleAfterColumns.filter((aisleColumn) => aisleColumn !== column)
+    : [...form.aisleAfterColumns, column];
 }
 
 function createEmptySeat(row: number, column: number): Seat {
@@ -56,6 +101,7 @@ async function loadPlan() {
     form.rows = plan.rows;
     form.columns = plan.columns;
     form.doorSide = plan.doorSide;
+    form.aisleAfterColumns = plan.aisleAfterColumns ?? [];
     form.seats = plan.seats.map((seat) => ({
       row: seat.row,
       column: seat.column,
@@ -151,12 +197,14 @@ async function submit() {
       rows: Number(form.rows),
       columns: Number(form.columns),
       doorSide: form.doorSide,
+      aisleAfterColumns: validAisleAfterColumns.value,
       seats: form.seats
     }, adminPassword.value);
     form.name = plan.name;
     form.rows = plan.rows;
     form.columns = plan.columns;
     form.doorSide = plan.doorSide;
+    form.aisleAfterColumns = plan.aisleAfterColumns ?? [];
     form.seats = plan.seats;
     message.value = "已保存";
   } catch (err) {
@@ -168,7 +216,11 @@ async function submit() {
 
 watch(
   () => [form.rows, form.columns],
-  () => normalizeSeats()
+  () => {
+    normalizeSeats();
+
+    form.aisleAfterColumns = validAisleAfterColumns.value;
+  }
 );
 
 onMounted(() => {
@@ -260,7 +312,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="grid gap-4 md:grid-cols-5">
+        <div class="grid gap-4 md:grid-cols-6">
           <label class="block">
             <span class="mb-2 block text-sm text-stone-500">名称</span>
             <input
@@ -309,6 +361,26 @@ onMounted(() => {
               {{ saving ? "保存中" : "保存" }}
             </button>
           </div>
+          <div class="md:col-span-6">
+            <span class="mb-2 block text-sm text-stone-500">过道位置</span>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="column in aisleOptions"
+                :key="column"
+                class="rounded-lg border px-3 py-2 text-sm transition"
+                :class="hasAisleAfter(column)
+                  ? 'border-stone-950 bg-stone-950 text-white'
+                  : 'border-stone-300 bg-white text-stone-700 hover:border-stone-950'"
+                type="button"
+                @click="toggleAisle(column)"
+              >
+                第 {{ column + 1 }} 列后
+              </button>
+              <span v-if="aisleOptions.length === 0" class="text-sm text-stone-500">
+                至少两列座位才可以添加过道
+              </span>
+            </div>
+          </div>
         </div>
 
         <p v-if="message" class="text-sm text-emerald-700">{{ message }}</p>
@@ -331,12 +403,21 @@ onMounted(() => {
 
           <div
             class="grid min-w-0 flex-1 gap-2"
-            :style="{ gridTemplateColumns: `repeat(${form.columns}, minmax(0, 1fr))` }"
+            :style="{ gridTemplateColumns: configGridTemplateColumns }"
           >
+            <div
+              v-for="column in validAisleAfterColumns"
+              :key="`aisle:${column}`"
+              class="pointer-events-none flex min-h-full items-center justify-center border-x border-dashed border-stone-400 text-xs font-medium text-stone-500"
+              :style="{ gridColumn: aisleGridColumn(column), gridRow: `1 / span ${form.rows}` }"
+            >
+              <span class="vertical-rl tracking-normal">过道</span>
+            </div>
             <div
               v-for="seat in sortedSeats"
               :key="seatKey(seat)"
               class="min-w-0 rounded-lg border p-2 shadow-sm transition"
+              :style="{ gridColumn: seatGridColumn(seat.column), gridRow: seat.row + 1 }"
               :class="{
                 'border-stone-950 bg-amber-50 shadow-lg ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100 scale-[1.02]': dragOverSeatKey === seatKey(seat),
                 'border-stone-400 bg-white opacity-70': draggedSeatKey === seatKey(seat),

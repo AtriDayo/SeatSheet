@@ -33,6 +33,7 @@ export async function getActivePlan(): Promise<SeatPlanWithSeats> {
       rows: DEFAULT_ROWS,
       columns: DEFAULT_COLUMNS,
       doorSide: "right",
+      aisleAfterColumns: [],
       seats: {
         createMany: {
           data: defaultSeats()
@@ -61,7 +62,8 @@ export async function updateActivePlan(input: PlanUpdateInput): Promise<SeatPlan
         name: input.name,
         rows: input.rows,
         columns: input.columns,
-        doorSide: input.doorSide
+        doorSide: input.doorSide,
+        aisleAfterColumns: [...input.aisleAfterColumns].sort((a, b) => a - b)
       }
     }),
     prisma.seat.deleteMany({ where: { planId: plan.id } }),

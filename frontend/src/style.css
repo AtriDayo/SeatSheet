@@ -21,3 +21,7 @@ button,
 input {
   font: inherit;
 }
+
+.vertical-rl {
+  writing-mode: vertical-rl;
+}

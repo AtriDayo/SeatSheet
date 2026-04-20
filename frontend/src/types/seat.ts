@@ -14,6 +14,7 @@ export interface SeatPlan {
   rows: number;
   columns: number;
   doorSide: DoorSide;
+  aisleAfterColumns: number[];
   seats: Seat[];
   createdAt: string;
   updatedAt: string;
@@ -24,5 +25,6 @@ export interface EditableSeatPlan {
   rows: number;
   columns: number;
   doorSide: DoorSide;
+  aisleAfterColumns: number[];
   seats: Seat[];
 }

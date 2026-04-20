@@ -6,6 +6,7 @@ const props = defineProps<{
   rows: number;
   columns: number;
   doorSide: DoorSide;
+  aisleAfterColumns: number[];
   seats: Seat[];
 }>();
 
@@ -14,6 +15,50 @@ function seatKey(row: number, column: number) {
 }
 
 const seatMap = computed(() => new Map(props.seats.map((seat) => [seatKey(seat.row, seat.column), seat])));
+
+const validAisleAfterColumns = computed(() =>
+  [...new Set(props.aisleAfterColumns)]
+    .filter((column) => column >= 0 && column < props.columns - 1)
+    .sort((a, b) => a - b)
+);
+
+const aisleColumnSet = computed(() => new Set(validAisleAfterColumns.value));
+
+const gridTemplateColumns = computed(() => {
+  const tracks: string[] = [];
+
+  for (let column = 0; column < props.columns; column += 1) {
+    tracks.push("minmax(8rem, 1fr)");
+
+    if (aisleColumnSet.value.has(column)) {
+      tracks.push("minmax(2rem, 2.5rem)");
+    }
+  }
+
+  return tracks.join(" ");
+});
+
+const seatCells = computed(() =>
+  Array.from({ length: props.rows * props.columns }, (_, index) => {
+    const row = Math.floor(index / props.columns);
+    const column = index % props.columns;
+
+    return {
+      key: seatKey(row, column),
+      row,
+      column,
+      gridColumn: seatGridColumn(column)
+    };
+  })
+);
+
+function seatGridColumn(column: number) {
+  return column + 1 + validAisleAfterColumns.value.filter((aisleColumn) => aisleColumn < column).length;
+}
+
+function aisleGridColumn(column: number) {
+  return column + 2 + validAisleAfterColumns.value.filter((aisleColumn) => aisleColumn < column).length;
+}
 </script>
 
 <template>
@@ -33,24 +78,31 @@ const seatMap = computed(() => new Map(props.seats.map((seat) => [seatKey(seat.r
 
     <div
       class="grid min-w-max flex-1 gap-3"
-      :style="{ gridTemplateColumns: `repeat(${columns}, minmax(8rem, 1fr))` }"
+      :style="{ gridTemplateColumns }"
     >
       <div
-        v-for="index in rows * columns"
-        :key="index"
-        class="min-h-20 rounded-lg border border-stone-200 bg-white px-4 py-3 shadow-sm"
+        v-for="column in validAisleAfterColumns"
+        :key="`aisle:${column}`"
+        class="pointer-events-none flex min-h-full items-center justify-center border-x border-dashed border-stone-400 text-sm font-medium text-stone-500"
+        :style="{ gridColumn: aisleGridColumn(column), gridRow: `1 / span ${rows}` }"
       >
-        <template v-if="seatMap.get(seatKey(Math.floor((index - 1) / columns), (index - 1) % columns))">
+        <span class="vertical-rl tracking-normal">过道</span>
+      </div>
+      <div
+        v-for="cell in seatCells"
+        :key="cell.key"
+        class="min-h-20 rounded-lg border border-stone-200 bg-white px-4 py-3 shadow-sm"
+        :style="{ gridColumn: cell.gridColumn, gridRow: cell.row + 1 }"
+      >
+        <template v-if="seatMap.get(cell.key)">
           <div class="truncate text-base font-medium text-stone-950">
             {{
-              seatMap.get(seatKey(Math.floor((index - 1) / columns), (index - 1) % columns))
-                ?.name || "空座"
+              seatMap.get(cell.key)?.name || "空座"
             }}
           </div>
           <div class="mt-1 truncate text-sm text-stone-500">
             {{
-              seatMap.get(seatKey(Math.floor((index - 1) / columns), (index - 1) % columns))
-                ?.studentNo || "未填写学号"
+              seatMap.get(cell.key)?.studentNo || "未填写学号"
             }}
           </div>
         </template>

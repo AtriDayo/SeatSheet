@@ -51,6 +51,7 @@ onMounted(loadPlan);
         :rows="plan.rows"
         :columns="plan.columns"
         :door-side="plan.doorSide"
+        :aisle-after-columns="plan.aisleAfterColumns"
         :seats="plan.seats"
       />
     </section>
