@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: seatsheet
       POSTGRES_USER: seatsheet
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-seatsheet_change_me}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env.prod}
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -15,9 +15,10 @@ services:
     depends_on:
       - postgres
     environment:
-      DATABASE_URL: postgresql://seatsheet:${POSTGRES_PASSWORD:-seatsheet_change_me}@postgres:5432/seatsheet?schema=public
+      DATABASE_URL: postgresql://seatsheet:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env.prod}@postgres:5432/seatsheet?schema=public
       PORT: 3000
       CORS_ORIGIN: ${CORS_ORIGIN:-https://seats.atridayo.com,https://seats-config.atridayo.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in deploy/.env.prod}
 
   frontend:
     image: ${DOCKER_IMAGE_NAMESPACE:-atridayo}/seatsheet-frontend:${SEATSHEET_IMAGE_TAG:-latest}

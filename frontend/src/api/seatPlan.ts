@@ -34,9 +34,19 @@ export function fetchSeatPlan() {
   return request<SeatPlan>("/api/seat-plan");
 }
 
-export function saveSeatPlan(plan: EditableSeatPlan) {
+export function verifyAdminPassword(password: string) {
+  return request<{ ok: true }>("/api/admin/verify", {
+    method: "POST",
+    body: JSON.stringify({ password })
+  });
+}
+
+export function saveSeatPlan(plan: EditableSeatPlan, adminPassword: string) {
   return request<SeatPlan>("/api/seat-plan", {
     method: "PUT",
+    headers: {
+      "X-Admin-Password": adminPassword
+    },
     body: JSON.stringify(plan)
   });
 }

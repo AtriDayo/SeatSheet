@@ -26,7 +26,7 @@ docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up 
 docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exec backend npm run prisma:deploy
 ```
 
-Edit `deploy/.env.prod` before the first `up`. Keep `DOCKER_IMAGE_NAMESPACE=atridayo` unless you publish your own image fork. Set `POSTGRES_PASSWORD` before the first database start and keep it stable afterward.
+Edit `deploy/.env.prod` before the first `up`. Keep `DOCKER_IMAGE_NAMESPACE=atridayo` unless you publish your own image fork. Set `POSTGRES_PASSWORD` before the first database start and keep it stable afterward. Set `ADMIN_PASSWORD` to the password required for `/config`.
 
 The app listens on `127.0.0.1:8080` from the VPS perspective. Put Caddy or Nginx in front of it for HTTPS:
 

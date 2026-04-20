@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { fetchSeatPlan, saveSeatPlan } from "../api/seatPlan";
+import { fetchSeatPlan, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
 import type { EditableSeatPlan, Seat } from "../types/seat";
 
 const loading = ref(true);
 const saving = ref(false);
+const authenticating = ref(false);
+const authenticated = ref(false);
+const adminPassword = ref("");
 const message = ref("");
 const error = ref("");
 
@@ -59,6 +62,30 @@ async function loadPlan() {
   }
 }
 
+async function authenticate() {
+  authenticating.value = true;
+  error.value = "";
+
+  try {
+    await verifyAdminPassword(adminPassword.value);
+    authenticated.value = true;
+    await loadPlan();
+  } catch (err) {
+    adminPassword.value = "";
+    error.value = err instanceof Error ? err.message : "管理密码错误";
+  } finally {
+    authenticating.value = false;
+  }
+}
+
+function leaveAdmin() {
+  authenticated.value = false;
+  adminPassword.value = "";
+  form.seats = [];
+  message.value = "";
+  error.value = "";
+}
+
 async function submit() {
   saving.value = true;
   error.value = "";
@@ -70,7 +97,7 @@ async function submit() {
       rows: Number(form.rows),
       columns: Number(form.columns),
       seats: form.seats
-    });
+    }, adminPassword.value);
     form.name = plan.name;
     form.rows = plan.rows;
     form.columns = plan.columns;
@@ -88,7 +115,9 @@ watch(
   () => normalizeSeats()
 );
 
-onMounted(loadPlan);
+onMounted(() => {
+  loading.value = false;
+});
 </script>
 
 <template>
@@ -107,11 +136,48 @@ onMounted(loadPlan);
         </RouterLink>
       </div>
 
-      <div v-if="loading" class="rounded-lg border border-stone-200 bg-white p-5 text-stone-500">
+      <form
+        v-if="!authenticated"
+        class="max-w-md rounded-lg border border-stone-200 bg-white p-5 shadow-sm"
+        @submit.prevent="authenticate"
+      >
+        <h2 class="text-xl font-semibold">进入管理页</h2>
+        <p class="mt-2 text-sm text-stone-500">请输入管理密码。本页面不会保存密码，刷新或重新进入后需要再次输入。</p>
+        <label class="mt-5 block">
+          <span class="mb-2 block text-sm text-stone-500">管理密码</span>
+          <input
+            v-model="adminPassword"
+            type="password"
+            autocomplete="off"
+            class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
+            required
+          />
+        </label>
+        <button
+          class="mt-4 w-full rounded-lg bg-stone-950 px-4 py-2 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400"
+          type="submit"
+          :disabled="authenticating"
+        >
+          {{ authenticating ? "验证中" : "进入" }}
+        </button>
+        <p v-if="error" class="mt-3 text-sm text-red-700">{{ error }}</p>
+      </form>
+
+      <div v-else-if="loading" class="rounded-lg border border-stone-200 bg-white p-5 text-stone-500">
         正在加载设置
       </div>
 
       <form v-else class="space-y-6" @submit.prevent="submit">
+        <div class="flex justify-end">
+          <button
+            class="rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
+            type="button"
+            @click="leaveAdmin"
+          >
+            退出管理
+          </button>
+        </div>
+
         <div class="grid gap-4 md:grid-cols-4">
           <label class="block">
             <span class="mb-2 block text-sm text-stone-500">名称</span>

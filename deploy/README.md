@@ -32,6 +32,7 @@ Edit `deploy/.env.prod` before the first `up`:
 - `SEATSHEET_IMAGE_TAG`: use `latest` unless you want a specific commit SHA tag.
 - `FRONTEND_PORT`: defaults to `8080`.
 - `POSTGRES_PASSWORD`: choose a strong password before the database volume is initialized.
+- `ADMIN_PASSWORD`: required for entering `/config` and saving changes.
 - `CORS_ORIGIN`: keep it aligned with your production domains.
 
 ### Switch From The Old Local-Build Deployment

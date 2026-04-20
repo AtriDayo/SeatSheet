@@ -22,6 +22,7 @@ services:
       DATABASE_URL: postgresql://seatsheet:seatsheet_change_me@postgres:5432/seatsheet?schema=public
       PORT: 3000
       CORS_ORIGIN: https://seats.atridayo.com,https://seats-config.atridayo.com
+      ADMIN_PASSWORD: change_this_admin_password
 
   frontend:
     build:
