@@ -42,10 +42,10 @@ const configGridTemplateColumns = computed(() => {
   const tracks: string[] = [];
 
   for (let column = 0; column < form.columns; column += 1) {
-    tracks.push("minmax(0, 1fr)");
+    tracks.push("8rem");
 
     if (aisleColumnSet.value.has(column)) {
-      tracks.push("minmax(1.75rem, 2rem)");
+      tracks.push("2rem");
     }
   }
 
@@ -283,8 +283,8 @@ onMounted(() => {
   </main>
 
   <main v-else class="min-h-screen bg-stone-100 px-5 py-6 text-stone-950">
-    <section class="mx-auto max-w-6xl">
-      <div class="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <section class="mx-auto w-full">
+      <div class="mx-auto mb-6 flex max-w-6xl flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p class="text-sm text-stone-500">SeatSheet Config</p>
           <h1 class="text-3xl font-semibold tracking-normal">座位表设置</h1>
@@ -297,12 +297,12 @@ onMounted(() => {
         </RouterLink>
       </div>
 
-      <div v-if="loading" class="rounded-lg border border-stone-200 bg-white p-5 text-stone-500">
+      <div v-if="loading" class="mx-auto max-w-6xl rounded-lg border border-stone-200 bg-white p-5 text-stone-500">
         正在加载设置
       </div>
 
       <form v-else class="space-y-6" @submit.prevent="submit">
-        <div class="flex justify-end">
+        <div class="mx-auto flex max-w-6xl justify-end">
           <button
             class="rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
             type="button"
@@ -312,7 +312,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="grid gap-4 md:grid-cols-6">
+        <div class="mx-auto grid max-w-6xl gap-4 md:grid-cols-6">
           <label class="block">
             <span class="mb-2 block text-sm text-stone-500">名称</span>
             <input
@@ -383,83 +383,85 @@ onMounted(() => {
           </div>
         </div>
 
-        <p v-if="message" class="text-sm text-emerald-700">{{ message }}</p>
-        <p v-if="error" class="text-sm text-red-700">{{ error }}</p>
-        <p class="text-sm text-stone-500">拖动座位标题，可直接对调两人的位置。</p>
+        <p v-if="message" class="mx-auto max-w-6xl text-sm text-emerald-700">{{ message }}</p>
+        <p v-if="error" class="mx-auto max-w-6xl text-sm text-red-700">{{ error }}</p>
+        <p class="mx-auto max-w-6xl text-sm text-stone-500">拖动座位标题，可直接对调两人的位置。</p>
 
-        <div class="flex items-stretch gap-3 pb-2">
-          <div
-            v-if="form.doorSide === 'left'"
-            class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1"
-          >
-            <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
-              前门
-            </div>
-            <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
-            <div class="rounded-lg border border-stone-300 bg-white px-2 py-3 text-center text-sm font-medium text-stone-800 shadow-sm">
-              后门
-            </div>
-          </div>
-
-          <div
-            class="grid min-w-0 flex-1 gap-2"
-            :style="{ gridTemplateColumns: configGridTemplateColumns }"
-          >
+        <div class="w-full overflow-x-auto pb-2">
+          <div class="mx-auto flex w-max items-stretch gap-3">
             <div
-              v-for="column in validAisleAfterColumns"
-              :key="`aisle:${column}`"
-              class="pointer-events-none flex min-h-full items-center justify-center border-x border-dashed border-stone-400 text-xs font-medium text-stone-500"
-              :style="{ gridColumn: aisleGridColumn(column), gridRow: `1 / span ${form.rows}` }"
+              v-if="form.doorSide === 'left'"
+              class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1"
             >
-              <span class="vertical-rl tracking-normal">过道</span>
+              <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
+                前门
+              </div>
+              <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
+              <div class="rounded-lg border border-stone-300 bg-white px-2 py-3 text-center text-sm font-medium text-stone-800 shadow-sm">
+                后门
+              </div>
             </div>
+
             <div
-              v-for="seat in sortedSeats"
-              :key="seatKey(seat)"
-              class="min-w-0 rounded-lg border p-2 shadow-sm transition"
-              :style="{ gridColumn: seatGridColumn(seat.column), gridRow: seat.row + 1 }"
-              :class="{
-                'border-stone-950 bg-amber-50 shadow-lg ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100 scale-[1.02]': dragOverSeatKey === seatKey(seat),
-                'border-stone-400 bg-white opacity-70': draggedSeatKey === seatKey(seat),
-                'border-stone-200 bg-white': draggedSeatKey !== seatKey(seat) && dragOverSeatKey !== seatKey(seat)
-              }"
-              @dragenter.prevent="setSeatDragTarget(seat)"
-              @dragover.prevent="setSeatDragTarget(seat)"
-              @drop.prevent="swapDraggedSeat(seat)"
+              class="grid gap-2"
+              :style="{ gridTemplateColumns: configGridTemplateColumns }"
             >
               <div
-                class="mb-2 truncate rounded-md px-1 py-1 text-xs text-stone-500 transition hover:bg-stone-100"
-                :class="draggedSeatKey === seatKey(seat) ? 'cursor-grabbing' : 'cursor-grab'"
-                draggable="true"
-                title="拖动以交换座位"
-                @dragstart="startSeatDrag(seat, $event)"
-                @dragend="clearSeatDrag"
+                v-for="column in validAisleAfterColumns"
+                :key="`aisle:${column}`"
+                class="pointer-events-none flex min-h-full items-center justify-center border-x border-dashed border-stone-400 text-xs font-medium text-stone-500"
+                :style="{ gridColumn: aisleGridColumn(column), gridRow: `1 / span ${form.rows}` }"
               >
-                第 {{ seat.row + 1 }} 排 / 第 {{ seat.column + 1 }} 列
+                <span class="vertical-rl tracking-normal">过道</span>
               </div>
-              <input
-                v-model="seat.name"
-                placeholder="姓名"
-                class="mb-2 w-full rounded-lg border border-stone-300 px-2 py-1.5 outline-none transition focus:border-stone-950"
-              />
-              <input
-                v-model="seat.studentNo"
-                placeholder="学号"
-                class="w-full rounded-lg border border-stone-300 px-2 py-1.5 outline-none transition focus:border-stone-950"
-              />
+              <div
+                v-for="seat in sortedSeats"
+                :key="seatKey(seat)"
+                class="min-w-0 rounded-lg border p-2 shadow-sm transition"
+                :style="{ gridColumn: seatGridColumn(seat.column), gridRow: seat.row + 1 }"
+                :class="{
+                  'border-stone-950 bg-amber-50 shadow-lg ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100 scale-[1.02]': dragOverSeatKey === seatKey(seat),
+                  'border-stone-400 bg-white opacity-70': draggedSeatKey === seatKey(seat),
+                  'border-stone-200 bg-white': draggedSeatKey !== seatKey(seat) && dragOverSeatKey !== seatKey(seat)
+                }"
+                @dragenter.prevent="setSeatDragTarget(seat)"
+                @dragover.prevent="setSeatDragTarget(seat)"
+                @drop.prevent="swapDraggedSeat(seat)"
+              >
+                <div
+                  class="mb-2 truncate rounded-md px-1 py-1 text-xs text-stone-500 transition hover:bg-stone-100"
+                  :class="draggedSeatKey === seatKey(seat) ? 'cursor-grabbing' : 'cursor-grab'"
+                  draggable="true"
+                  title="拖动以交换座位"
+                  @dragstart="startSeatDrag(seat, $event)"
+                  @dragend="clearSeatDrag"
+                >
+                  第 {{ seat.row + 1 }} 排 / 第 {{ seat.column + 1 }} 列
+                </div>
+                <input
+                  v-model="seat.name"
+                  placeholder="姓名"
+                  class="mb-2 w-full rounded-lg border border-stone-300 px-2 py-1.5 outline-none transition focus:border-stone-950"
+                />
+                <input
+                  v-model="seat.studentNo"
+                  placeholder="学号"
+                  class="w-full rounded-lg border border-stone-300 px-2 py-1.5 outline-none transition focus:border-stone-950"
+                />
+              </div>
             </div>
-          </div>
 
-          <div
-            v-if="form.doorSide === 'right'"
-            class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1"
-          >
-            <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
-              前门
-            </div>
-            <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
-            <div class="rounded-lg border border-stone-300 bg-white px-2 py-3 text-center text-sm font-medium text-stone-800 shadow-sm">
-              后门
+            <div
+              v-if="form.doorSide === 'right'"
+              class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1"
+            >
+              <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
+                前门
+              </div>
+              <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
+              <div class="rounded-lg border border-stone-300 bg-white px-2 py-3 text-center text-sm font-medium text-stone-800 shadow-sm">
+                后门
+              </div>
             </div>
           </div>
         </div>
