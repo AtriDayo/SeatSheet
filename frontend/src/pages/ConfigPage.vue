@@ -10,6 +10,8 @@ const authenticated = ref(false);
 const adminPassword = ref("");
 const message = ref("");
 const error = ref("");
+const draggedSeatKey = ref<string | null>(null);
+const dragOverSeatKey = ref<string | null>(null);
 
 const form = reactive<EditableSeatPlan>({
   name: "座位表",
@@ -22,6 +24,10 @@ const form = reactive<EditableSeatPlan>({
 const sortedSeats = computed(() =>
   [...form.seats].sort((a, b) => a.row - b.row || a.column - b.column)
 );
+
+function seatKey(seat: Pick<Seat, "row" | "column">) {
+  return `${seat.row}:${seat.column}`;
+}
 
 function createEmptySeat(row: number, column: number): Seat {
   return { row, column, name: null, studentNo: null };
@@ -84,8 +90,54 @@ function leaveAdmin() {
   authenticated.value = false;
   adminPassword.value = "";
   form.seats = [];
+  clearSeatDrag();
   message.value = "";
   error.value = "";
+}
+
+function clearSeatDrag() {
+  draggedSeatKey.value = null;
+  dragOverSeatKey.value = null;
+}
+
+function findSeatByKey(key: string | null) {
+  if (!key) {
+    return undefined;
+  }
+
+  return form.seats.find((seat) => seatKey(seat) === key);
+}
+
+function startSeatDrag(seat: Seat, event: DragEvent) {
+  draggedSeatKey.value = seatKey(seat);
+  dragOverSeatKey.value = null;
+  event.dataTransfer?.setData("text/plain", draggedSeatKey.value);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+  }
+}
+
+function setSeatDragTarget(seat: Seat) {
+  const key = seatKey(seat);
+
+  dragOverSeatKey.value = draggedSeatKey.value && draggedSeatKey.value !== key ? key : null;
+}
+
+function swapDraggedSeat(targetSeat: Seat) {
+  const sourceSeat = findSeatByKey(draggedSeatKey.value);
+
+  if (!sourceSeat || sourceSeat === targetSeat) {
+    clearSeatDrag();
+    return;
+  }
+
+  const sourceName = sourceSeat.name;
+  const sourceStudentNo = sourceSeat.studentNo;
+  sourceSeat.name = targetSeat.name;
+  sourceSeat.studentNo = targetSeat.studentNo;
+  targetSeat.name = sourceName;
+  targetSeat.studentNo = sourceStudentNo;
+  clearSeatDrag();
 }
 
 async function submit() {
@@ -261,6 +313,7 @@ onMounted(() => {
 
         <p v-if="message" class="text-sm text-emerald-700">{{ message }}</p>
         <p v-if="error" class="text-sm text-red-700">{{ error }}</p>
+        <p class="text-sm text-stone-500">拖动座位标题，可直接对调两人的位置。</p>
 
         <div class="flex items-stretch gap-3 pb-2">
           <div
@@ -282,10 +335,25 @@ onMounted(() => {
           >
             <div
               v-for="seat in sortedSeats"
-              :key="`${seat.row}:${seat.column}`"
-              class="min-w-0 rounded-lg border border-stone-200 bg-white p-2 shadow-sm"
+              :key="seatKey(seat)"
+              class="min-w-0 rounded-lg border p-2 shadow-sm transition"
+              :class="{
+                'border-stone-950 bg-amber-50 shadow-lg ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100 scale-[1.02]': dragOverSeatKey === seatKey(seat),
+                'border-stone-400 bg-white opacity-70': draggedSeatKey === seatKey(seat),
+                'border-stone-200 bg-white': draggedSeatKey !== seatKey(seat) && dragOverSeatKey !== seatKey(seat)
+              }"
+              @dragenter.prevent="setSeatDragTarget(seat)"
+              @dragover.prevent="setSeatDragTarget(seat)"
+              @drop.prevent="swapDraggedSeat(seat)"
             >
-              <div class="mb-2 truncate text-xs text-stone-500">
+              <div
+                class="mb-2 truncate rounded-md px-1 py-1 text-xs text-stone-500 transition hover:bg-stone-100"
+                :class="draggedSeatKey === seatKey(seat) ? 'cursor-grabbing' : 'cursor-grab'"
+                draggable="true"
+                title="拖动以交换座位"
+                @dragstart="startSeatDrag(seat, $event)"
+                @dragend="clearSeatDrag"
+              >
                 第 {{ seat.row + 1 }} 排 / 第 {{ seat.column + 1 }} 列
               </div>
               <input
