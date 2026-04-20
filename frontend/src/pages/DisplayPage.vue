@@ -26,8 +26,8 @@ onMounted(loadPlan);
 
 <template>
   <main class="min-h-screen bg-stone-100 px-5 py-8 text-stone-950">
-    <section class="mx-auto max-w-7xl">
-      <div class="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <section class="mx-auto w-full">
+      <div class="mx-auto mb-6 flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p class="text-sm text-stone-500">SeatSheet</p>
           <h1 class="text-3xl font-semibold tracking-normal">{{ plan?.name || "座位表" }}</h1>
@@ -40,10 +40,10 @@ onMounted(loadPlan);
         </RouterLink>
       </div>
 
-      <div v-if="loading" class="rounded-lg border border-stone-200 bg-white p-5 text-stone-500">
+      <div v-if="loading" class="mx-auto max-w-7xl rounded-lg border border-stone-200 bg-white p-5 text-stone-500">
         正在加载座位表
       </div>
-      <div v-else-if="error" class="rounded-lg border border-red-200 bg-red-50 p-5 text-red-700">
+      <div v-else-if="error" class="mx-auto max-w-7xl rounded-lg border border-red-200 bg-red-50 p-5 text-red-700">
         {{ error }}
       </div>
       <SeatGrid

@@ -62,63 +62,65 @@ function aisleGridColumn(column: number) {
 </script>
 
 <template>
-  <div class="flex items-stretch gap-3 overflow-x-auto pb-2">
-    <div
-      v-if="doorSide === 'left'"
-      class="flex min-w-20 flex-col justify-between gap-3 py-1"
-    >
-      <div class="rounded-lg border border-stone-300 bg-stone-950 px-3 py-4 text-center text-sm font-medium text-white shadow-sm">
-        前门
-      </div>
-      <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
-      <div class="rounded-lg border border-stone-300 bg-white px-3 py-4 text-center text-sm font-medium text-stone-800 shadow-sm">
-        后门
-      </div>
-    </div>
-
-    <div
-      class="grid min-w-max flex-1 gap-3"
-      :style="{ gridTemplateColumns }"
-    >
+  <div class="w-full overflow-x-auto pb-2">
+    <div class="mx-auto flex w-max items-stretch gap-3">
       <div
-        v-for="column in validAisleAfterColumns"
-        :key="`aisle:${column}`"
-        class="pointer-events-none flex min-h-full items-center justify-center border-x border-dashed border-stone-400 text-sm font-medium text-stone-500"
-        :style="{ gridColumn: aisleGridColumn(column), gridRow: `1 / span ${rows}` }"
+        v-if="doorSide === 'left'"
+        class="flex min-w-20 flex-col justify-between gap-3 py-1"
       >
-        <span class="vertical-rl tracking-normal">过道</span>
+        <div class="rounded-lg border border-stone-300 bg-stone-950 px-3 py-4 text-center text-sm font-medium text-white shadow-sm">
+          前门
+        </div>
+        <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
+        <div class="rounded-lg border border-stone-300 bg-white px-3 py-4 text-center text-sm font-medium text-stone-800 shadow-sm">
+          后门
+        </div>
       </div>
-      <div
-        v-for="cell in seatCells"
-        :key="cell.key"
-        class="min-h-20 rounded-lg border border-stone-200 bg-white px-4 py-3 shadow-sm"
-        :style="{ gridColumn: cell.gridColumn, gridRow: cell.row + 1 }"
-      >
-        <template v-if="seatMap.get(cell.key)">
-          <div class="truncate text-base font-medium text-stone-950">
-            {{
-              seatMap.get(cell.key)?.name || "空座"
-            }}
-          </div>
-          <div class="mt-1 truncate text-sm text-stone-500">
-            {{
-              seatMap.get(cell.key)?.studentNo || "未填写学号"
-            }}
-          </div>
-        </template>
-      </div>
-    </div>
 
-    <div
-      v-if="doorSide === 'right'"
-      class="flex min-w-20 flex-col justify-between gap-3 py-1"
-    >
-      <div class="rounded-lg border border-stone-300 bg-stone-950 px-3 py-4 text-center text-sm font-medium text-white shadow-sm">
-        前门
+      <div
+        class="grid gap-3"
+        :style="{ gridTemplateColumns }"
+      >
+        <div
+          v-for="column in validAisleAfterColumns"
+          :key="`aisle:${column}`"
+          class="pointer-events-none flex min-h-full items-center justify-center border-x border-dashed border-stone-400 text-sm font-medium text-stone-500"
+          :style="{ gridColumn: aisleGridColumn(column), gridRow: `1 / span ${rows}` }"
+        >
+          <span class="vertical-rl tracking-normal">过道</span>
+        </div>
+        <div
+          v-for="cell in seatCells"
+          :key="cell.key"
+          class="min-h-20 rounded-lg border border-stone-200 bg-white px-4 py-3 shadow-sm"
+          :style="{ gridColumn: cell.gridColumn, gridRow: cell.row + 1 }"
+        >
+          <template v-if="seatMap.get(cell.key)">
+            <div class="truncate text-base font-medium text-stone-950">
+              {{
+                seatMap.get(cell.key)?.name || "空座"
+              }}
+            </div>
+            <div class="mt-1 truncate text-sm text-stone-500">
+              {{
+                seatMap.get(cell.key)?.studentNo || "未填写学号"
+              }}
+            </div>
+          </template>
+        </div>
       </div>
-      <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
-      <div class="rounded-lg border border-stone-300 bg-white px-3 py-4 text-center text-sm font-medium text-stone-800 shadow-sm">
-        后门
+
+      <div
+        v-if="doorSide === 'right'"
+        class="flex min-w-20 flex-col justify-between gap-3 py-1"
+      >
+        <div class="rounded-lg border border-stone-300 bg-stone-950 px-3 py-4 text-center text-sm font-medium text-white shadow-sm">
+          前门
+        </div>
+        <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
+        <div class="rounded-lg border border-stone-300 bg-white px-3 py-4 text-center text-sm font-medium text-stone-800 shadow-sm">
+          后门
+        </div>
       </div>
     </div>
   </div>
