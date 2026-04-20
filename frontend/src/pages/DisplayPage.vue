@@ -50,6 +50,7 @@ onMounted(loadPlan);
         v-else-if="plan"
         :rows="plan.rows"
         :columns="plan.columns"
+        :door-side="plan.doorSide"
         :seats="plan.seats"
       />
     </section>

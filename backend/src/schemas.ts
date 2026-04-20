@@ -11,6 +11,7 @@ export const planUpdateSchema = z.object({
   name: z.string().trim().min(1).max(80),
   rows: z.number().int().min(1).max(30),
   columns: z.number().int().min(1).max(30),
+  doorSide: z.enum(["left", "right"]),
   seats: z.array(seatInputSchema)
 });
 

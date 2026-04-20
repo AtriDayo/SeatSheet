@@ -6,11 +6,14 @@ export interface Seat {
   studentNo: string | null;
 }
 
+export type DoorSide = "left" | "right";
+
 export interface SeatPlan {
   id: string;
   name: string;
   rows: number;
   columns: number;
+  doorSide: DoorSide;
   seats: Seat[];
   createdAt: string;
   updatedAt: string;
@@ -20,5 +23,6 @@ export interface EditableSeatPlan {
   name: string;
   rows: number;
   columns: number;
+  doorSide: DoorSide;
   seats: Seat[];
 }

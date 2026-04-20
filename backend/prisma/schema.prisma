@@ -13,6 +13,7 @@ model SeatPlan {
   name      String
   rows      Int
   columns   Int
+  doorSide  String   @default("right")
   isActive  Boolean  @default(true)
   seats     Seat[]
   createdAt DateTime @default(now())

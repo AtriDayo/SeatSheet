@@ -15,6 +15,7 @@ const form = reactive<EditableSeatPlan>({
   name: "座位表",
   rows: 5,
   columns: 6,
+  doorSide: "right",
   seats: []
 });
 
@@ -48,6 +49,7 @@ async function loadPlan() {
     form.name = plan.name;
     form.rows = plan.rows;
     form.columns = plan.columns;
+    form.doorSide = plan.doorSide;
     form.seats = plan.seats.map((seat) => ({
       row: seat.row,
       column: seat.column,
@@ -96,11 +98,13 @@ async function submit() {
       name: form.name,
       rows: Number(form.rows),
       columns: Number(form.columns),
+      doorSide: form.doorSide,
       seats: form.seats
     }, adminPassword.value);
     form.name = plan.name;
     form.rows = plan.rows;
     form.columns = plan.columns;
+    form.doorSide = plan.doorSide;
     form.seats = plan.seats;
     message.value = "已保存";
   } catch (err) {
@@ -121,7 +125,60 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="min-h-screen bg-stone-100 px-5 py-8 text-stone-950">
+  <main
+    v-if="!authenticated"
+    class="min-h-screen bg-stone-950 px-5 py-8 text-white"
+  >
+    <section class="mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl flex-col justify-between">
+      <div class="flex items-center justify-between">
+        <p class="text-sm text-stone-400">SeatSheet Config</p>
+        <RouterLink
+          to="/"
+          class="rounded-lg border border-stone-700 px-3 py-2 text-sm text-stone-300 transition hover:border-white hover:text-white"
+        >
+          返回展示页
+        </RouterLink>
+      </div>
+
+      <form class="grid gap-10 md:grid-cols-[1fr_minmax(18rem,26rem)] md:items-end" @submit.prevent="authenticate">
+        <div>
+          <p class="mb-4 text-sm text-stone-400">管理入口</p>
+          <h1 class="max-w-3xl text-4xl font-semibold tracking-normal sm:text-5xl">
+            输入管理密码后才能修改座位表。
+          </h1>
+          <p class="mt-5 max-w-2xl text-base leading-7 text-stone-400">
+            密码只会在当前页面内存中使用，不写入 Cookie 或浏览器存储。刷新页面、重新打开页面或退出管理后都需要再次输入。
+          </p>
+        </div>
+
+        <div>
+          <label class="block">
+            <span class="mb-3 block text-sm text-stone-400">管理密码</span>
+            <input
+              v-model="adminPassword"
+              type="password"
+              autocomplete="off"
+              class="w-full border-0 border-b border-stone-600 bg-transparent px-0 py-3 text-lg text-white outline-none transition placeholder:text-stone-600 focus:border-white"
+              placeholder="输入密码"
+              required
+            />
+          </label>
+          <button
+            class="mt-6 w-full rounded-lg bg-white px-4 py-3 text-stone-950 transition hover:bg-stone-200 disabled:cursor-not-allowed disabled:bg-stone-600 disabled:text-stone-300"
+            type="submit"
+            :disabled="authenticating"
+          >
+            {{ authenticating ? "验证中" : "进入管理" }}
+          </button>
+          <p v-if="error" class="mt-3 text-sm text-red-300">{{ error }}</p>
+        </div>
+      </form>
+
+      <p class="text-sm text-stone-500">SeatSheet 不会在本机保存管理凭据。</p>
+    </section>
+  </main>
+
+  <main v-else class="min-h-screen bg-stone-100 px-5 py-8 text-stone-950">
     <section class="mx-auto max-w-7xl">
       <div class="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -136,34 +193,7 @@ onMounted(() => {
         </RouterLink>
       </div>
 
-      <form
-        v-if="!authenticated"
-        class="max-w-md rounded-lg border border-stone-200 bg-white p-5 shadow-sm"
-        @submit.prevent="authenticate"
-      >
-        <h2 class="text-xl font-semibold">进入管理页</h2>
-        <p class="mt-2 text-sm text-stone-500">请输入管理密码。本页面不会保存密码，刷新或重新进入后需要再次输入。</p>
-        <label class="mt-5 block">
-          <span class="mb-2 block text-sm text-stone-500">管理密码</span>
-          <input
-            v-model="adminPassword"
-            type="password"
-            autocomplete="off"
-            class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
-            required
-          />
-        </label>
-        <button
-          class="mt-4 w-full rounded-lg bg-stone-950 px-4 py-2 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400"
-          type="submit"
-          :disabled="authenticating"
-        >
-          {{ authenticating ? "验证中" : "进入" }}
-        </button>
-        <p v-if="error" class="mt-3 text-sm text-red-700">{{ error }}</p>
-      </form>
-
-      <div v-else-if="loading" class="rounded-lg border border-stone-200 bg-white p-5 text-stone-500">
+      <div v-if="loading" class="rounded-lg border border-stone-200 bg-white p-5 text-stone-500">
         正在加载设置
       </div>
 
@@ -178,7 +208,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <div class="grid gap-4 md:grid-cols-4">
+        <div class="grid gap-4 md:grid-cols-5">
           <label class="block">
             <span class="mb-2 block text-sm text-stone-500">名称</span>
             <input
@@ -208,6 +238,16 @@ onMounted(() => {
               class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
             />
           </label>
+          <label class="block">
+            <span class="mb-2 block text-sm text-stone-500">门的位置</span>
+            <select
+              v-model="form.doorSide"
+              class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
+            >
+              <option value="left">左侧</option>
+              <option value="right">右侧</option>
+            </select>
+          </label>
           <div class="flex items-end">
             <button
               class="w-full rounded-lg bg-stone-950 px-4 py-2 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400"
@@ -222,28 +262,56 @@ onMounted(() => {
         <p v-if="message" class="text-sm text-emerald-700">{{ message }}</p>
         <p v-if="error" class="text-sm text-red-700">{{ error }}</p>
 
-        <div
-          class="grid gap-3 overflow-x-auto pb-2"
-          :style="{ gridTemplateColumns: `repeat(${form.columns}, minmax(12rem, 1fr))` }"
-        >
+        <div class="flex items-stretch gap-3 overflow-x-auto pb-2">
           <div
-            v-for="seat in sortedSeats"
-            :key="`${seat.row}:${seat.column}`"
-            class="rounded-lg border border-stone-200 bg-white p-3 shadow-sm"
+            v-if="form.doorSide === 'left'"
+            class="flex min-w-20 flex-col justify-between gap-3 py-1"
           >
-            <div class="mb-3 text-xs text-stone-500">
-              第 {{ seat.row + 1 }} 排 / 第 {{ seat.column + 1 }} 列
+            <div class="rounded-lg border border-stone-300 bg-stone-950 px-3 py-4 text-center text-sm font-medium text-white shadow-sm">
+              前门
             </div>
-            <input
-              v-model="seat.name"
-              placeholder="姓名"
-              class="mb-2 w-full rounded-lg border border-stone-300 px-3 py-2 outline-none transition focus:border-stone-950"
-            />
-            <input
-              v-model="seat.studentNo"
-              placeholder="学号"
-              class="w-full rounded-lg border border-stone-300 px-3 py-2 outline-none transition focus:border-stone-950"
-            />
+            <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
+            <div class="rounded-lg border border-stone-300 bg-white px-3 py-4 text-center text-sm font-medium text-stone-800 shadow-sm">
+              后门
+            </div>
+          </div>
+
+          <div
+            class="grid min-w-max flex-1 gap-3"
+            :style="{ gridTemplateColumns: `repeat(${form.columns}, minmax(12rem, 1fr))` }"
+          >
+            <div
+              v-for="seat in sortedSeats"
+              :key="`${seat.row}:${seat.column}`"
+              class="rounded-lg border border-stone-200 bg-white p-3 shadow-sm"
+            >
+              <div class="mb-3 text-xs text-stone-500">
+                第 {{ seat.row + 1 }} 排 / 第 {{ seat.column + 1 }} 列
+              </div>
+              <input
+                v-model="seat.name"
+                placeholder="姓名"
+                class="mb-2 w-full rounded-lg border border-stone-300 px-3 py-2 outline-none transition focus:border-stone-950"
+              />
+              <input
+                v-model="seat.studentNo"
+                placeholder="学号"
+                class="w-full rounded-lg border border-stone-300 px-3 py-2 outline-none transition focus:border-stone-950"
+              />
+            </div>
+          </div>
+
+          <div
+            v-if="form.doorSide === 'right'"
+            class="flex min-w-20 flex-col justify-between gap-3 py-1"
+          >
+            <div class="rounded-lg border border-stone-300 bg-stone-950 px-3 py-4 text-center text-sm font-medium text-white shadow-sm">
+              前门
+            </div>
+            <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
+            <div class="rounded-lg border border-stone-300 bg-white px-3 py-4 text-center text-sm font-medium text-stone-800 shadow-sm">
+              后门
+            </div>
           </div>
         </div>
       </form>

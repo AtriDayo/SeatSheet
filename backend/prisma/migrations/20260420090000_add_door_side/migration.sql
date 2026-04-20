@@ -1,0 +1,1 @@
+ALTER TABLE "SeatPlan" ADD COLUMN "doorSide" TEXT NOT NULL DEFAULT 'right';
