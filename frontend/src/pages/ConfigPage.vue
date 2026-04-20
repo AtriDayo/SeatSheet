@@ -10,8 +10,11 @@ const authenticated = ref(false);
 const adminPassword = ref("");
 const message = ref("");
 const error = ref("");
+const importFileInput = ref<HTMLInputElement | null>(null);
 const draggedSeatKey = ref<string | null>(null);
 const dragOverSeatKey = ref<string | null>(null);
+const draggedPairKey = ref<string | null>(null);
+const dragOverPairKey = ref<string | null>(null);
 
 const form = reactive<EditableSeatPlan>({
   name: "座位表",
@@ -38,11 +41,28 @@ const validAisleAfterColumns = computed(() =>
 
 const aisleColumnSet = computed(() => new Set(validAisleAfterColumns.value));
 
+const deskPairStartColumns = computed(() =>
+  Array.from({ length: form.columns }, (_, column) => column)
+    .filter((column) => column % 2 === 0 && column + 1 < form.columns && !aisleColumnSet.value.has(column))
+);
+
+const deskPairStartColumnSet = computed(() => new Set(deskPairStartColumns.value));
+
+const deskPairHandles = computed(() =>
+  Array.from({ length: form.rows }, (_, row) =>
+    deskPairStartColumns.value.map((startColumn) => ({ row, startColumn }))
+  ).flat()
+);
+
 const configGridTemplateColumns = computed(() => {
   const tracks: string[] = [];
 
   for (let column = 0; column < form.columns; column += 1) {
     tracks.push("8rem");
+
+    if (deskPairStartColumnSet.value.has(column)) {
+      tracks.push("0.75rem");
+    }
 
     if (aisleColumnSet.value.has(column)) {
       tracks.push("2rem");
@@ -57,11 +77,22 @@ function seatKey(seat: Pick<Seat, "row" | "column">) {
 }
 
 function seatGridColumn(column: number) {
-  return column + 1 + validAisleAfterColumns.value.filter((aisleColumn) => aisleColumn < column).length;
+  return column + 1 + insertedTrackColumnsBefore(column).length;
 }
 
 function aisleGridColumn(column: number) {
-  return column + 2 + validAisleAfterColumns.value.filter((aisleColumn) => aisleColumn < column).length;
+  return column + 2 + insertedTrackColumnsBefore(column).length;
+}
+
+function deskPairHandleGridColumn(column: number) {
+  return column + 2 + insertedTrackColumnsBefore(column).length;
+}
+
+function insertedTrackColumnsBefore(column: number) {
+  return [
+    ...validAisleAfterColumns.value,
+    ...deskPairStartColumns.value
+  ].filter((insertedColumn) => insertedColumn < column);
 }
 
 function hasAisleAfter(column: number) {
@@ -76,6 +107,10 @@ function toggleAisle(column: number) {
 
 function createEmptySeat(row: number, column: number): Seat {
   return { row, column, name: null, studentNo: null };
+}
+
+function normalizeText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function normalizeSeats() {
@@ -137,6 +172,7 @@ function leaveAdmin() {
   adminPassword.value = "";
   form.seats = [];
   clearSeatDrag();
+  clearPairDrag();
   message.value = "";
   error.value = "";
 }
@@ -144,6 +180,11 @@ function leaveAdmin() {
 function clearSeatDrag() {
   draggedSeatKey.value = null;
   dragOverSeatKey.value = null;
+}
+
+function clearPairDrag() {
+  draggedPairKey.value = null;
+  dragOverPairKey.value = null;
 }
 
 function findSeatByKey(key: string | null) {
@@ -155,6 +196,7 @@ function findSeatByKey(key: string | null) {
 }
 
 function startSeatDrag(seat: Seat, event: DragEvent) {
+  clearPairDrag();
   draggedSeatKey.value = seatKey(seat);
   dragOverSeatKey.value = null;
   event.dataTransfer?.setData("text/plain", draggedSeatKey.value);
@@ -164,9 +206,29 @@ function startSeatDrag(seat: Seat, event: DragEvent) {
 }
 
 function setSeatDragTarget(seat: Seat) {
+  if (draggedPairKey.value) {
+    const startColumn = pairStartColumnForSeat(seat);
+    const key = startColumn === null ? null : pairKey(seat.row, startColumn);
+    dragOverPairKey.value = key && key !== draggedPairKey.value ? key : null;
+    return;
+  }
+
   const key = seatKey(seat);
 
   dragOverSeatKey.value = draggedSeatKey.value && draggedSeatKey.value !== key ? key : null;
+}
+
+function dropOnSeat(seat: Seat) {
+  if (draggedPairKey.value) {
+    const startColumn = pairStartColumnForSeat(seat);
+
+    if (startColumn !== null) {
+      swapDraggedPair(seat.row, startColumn);
+      return;
+    }
+  }
+
+  swapDraggedSeat(seat);
 }
 
 function swapDraggedSeat(targetSeat: Seat) {
@@ -184,6 +246,180 @@ function swapDraggedSeat(targetSeat: Seat) {
   targetSeat.name = sourceName;
   targetSeat.studentNo = sourceStudentNo;
   clearSeatDrag();
+}
+
+function pairKey(row: number, startColumn: number) {
+  return `${row}:${startColumn}`;
+}
+
+function parsePairKey(key: string | null) {
+  if (!key) {
+    return null;
+  }
+
+  const [row, startColumn] = key.split(":").map(Number);
+
+  if (!Number.isInteger(row) || !Number.isInteger(startColumn)) {
+    return null;
+  }
+
+  return { row, startColumn };
+}
+
+function pairSeats(row: number, startColumn: number) {
+  const leftSeat = form.seats.find((seat) => seat.row === row && seat.column === startColumn);
+  const rightSeat = form.seats.find((seat) => seat.row === row && seat.column === startColumn + 1);
+  return leftSeat && rightSeat ? [leftSeat, rightSeat] : [];
+}
+
+function pairStartColumnForSeat(seat: Seat) {
+  if (deskPairStartColumnSet.value.has(seat.column)) {
+    return seat.column;
+  }
+
+  if (deskPairStartColumnSet.value.has(seat.column - 1)) {
+    return seat.column - 1;
+  }
+
+  return null;
+}
+
+function isPairDragTarget(row: number, startColumn: number) {
+  return dragOverPairKey.value === pairKey(row, startColumn);
+}
+
+function isSeatInPair(seat: Seat, key: string | null) {
+  const pair = parsePairKey(key);
+
+  return Boolean(
+    pair &&
+    seat.row === pair.row &&
+    (seat.column === pair.startColumn || seat.column === pair.startColumn + 1)
+  );
+}
+
+function startPairDrag(row: number, startColumn: number, event: DragEvent) {
+  clearSeatDrag();
+  draggedPairKey.value = pairKey(row, startColumn);
+  dragOverPairKey.value = null;
+  event.dataTransfer?.setData("text/plain", draggedPairKey.value);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+  }
+}
+
+function setPairDragTarget(row: number, startColumn: number) {
+  const key = pairKey(row, startColumn);
+  dragOverPairKey.value = draggedPairKey.value && draggedPairKey.value !== key ? key : null;
+}
+
+function swapDraggedPair(row: number, startColumn: number) {
+  const source = parsePairKey(draggedPairKey.value);
+
+  if (!source || source.row === row && source.startColumn === startColumn) {
+    clearPairDrag();
+    return;
+  }
+
+  const sourceSeats = pairSeats(source.row, source.startColumn);
+  const targetSeats = pairSeats(row, startColumn);
+
+  if (sourceSeats.length !== 2 || targetSeats.length !== 2) {
+    clearPairDrag();
+    return;
+  }
+
+  sourceSeats.forEach((sourceSeat, index) => {
+    const targetSeat = targetSeats[index];
+    const sourceName = sourceSeat.name;
+    const sourceStudentNo = sourceSeat.studentNo;
+    sourceSeat.name = targetSeat.name;
+    sourceSeat.studentNo = targetSeat.studentNo;
+    targetSeat.name = sourceName;
+    targetSeat.studentNo = sourceStudentNo;
+  });
+  clearPairDrag();
+}
+
+function exportJson() {
+  const payload: EditableSeatPlan = {
+    name: form.name,
+    rows: Number(form.rows),
+    columns: Number(form.columns),
+    doorSide: form.doorSide,
+    aisleAfterColumns: validAisleAfterColumns.value,
+    seats: sortedSeats.value.map((seat) => ({
+      row: seat.row,
+      column: seat.column,
+      name: seat.name,
+      studentNo: seat.studentNo
+    }))
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const safeName = form.name.trim() || "seatsheet";
+  link.href = url;
+  link.download = `${safeName}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function openImportFile() {
+  importFileInput.value?.click();
+}
+
+async function importJson(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    const payload = JSON.parse(await file.text()) as Partial<EditableSeatPlan>;
+    const rows = Number(payload.rows);
+    const columns = Number(payload.columns);
+
+    if (!Number.isInteger(rows) || rows < 1 || rows > 30 || !Number.isInteger(columns) || columns < 1 || columns > 30) {
+      throw new Error("JSON 中的行列数不正确");
+    }
+
+    form.name = typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : "导入座位表";
+    form.rows = rows;
+    form.columns = columns;
+    form.doorSide = payload.doorSide === "left" ? "left" : "right";
+    form.aisleAfterColumns = Array.isArray(payload.aisleAfterColumns)
+      ? payload.aisleAfterColumns
+          .map(Number)
+          .filter((column) => Number.isInteger(column) && column >= 0 && column < columns - 1)
+      : [];
+    form.seats = Array.isArray(payload.seats)
+      ? payload.seats
+          .map((seat) => ({
+            row: Number(seat.row),
+            column: Number(seat.column),
+            name: normalizeText(seat.name),
+            studentNo: normalizeText(seat.studentNo)
+          }))
+          .filter((seat) =>
+            Number.isInteger(seat.row) &&
+            seat.row >= 0 &&
+            seat.row < rows &&
+            Number.isInteger(seat.column) &&
+            seat.column >= 0 &&
+            seat.column < columns
+          )
+      : [];
+    normalizeSeats();
+    message.value = "已导入，保存后生效";
+    error.value = "";
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : "导入失败";
+    message.value = "";
+  }
 }
 
 async function submit() {
@@ -352,6 +588,29 @@ onMounted(() => {
               <option value="right">右侧</option>
             </select>
           </label>
+          <div class="flex items-end gap-2">
+            <button
+              class="flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
+              type="button"
+              @click="exportJson"
+            >
+              导出 JSON
+            </button>
+            <button
+              class="flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
+              type="button"
+              @click="openImportFile"
+            >
+              导入 JSON
+            </button>
+            <input
+              ref="importFileInput"
+              class="hidden"
+              type="file"
+              accept="application/json,.json"
+              @change="importJson"
+            />
+          </div>
           <div class="flex items-end">
             <button
               class="w-full rounded-lg bg-stone-950 px-4 py-2 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400"
@@ -385,7 +644,9 @@ onMounted(() => {
 
         <p v-if="message" class="mx-auto max-w-6xl text-sm text-emerald-700">{{ message }}</p>
         <p v-if="error" class="mx-auto max-w-6xl text-sm text-red-700">{{ error }}</p>
-        <p class="mx-auto max-w-6xl text-sm text-stone-500">拖动座位标题，可直接对调两人的位置。</p>
+        <p class="mx-auto max-w-6xl text-sm text-stone-500">
+          拖动座位标题可对调单人；拖动同桌中间的三点可整组对调。
+        </p>
 
         <div class="w-full overflow-x-auto pb-2">
           <div class="mx-auto flex w-max items-stretch gap-3">
@@ -414,6 +675,30 @@ onMounted(() => {
               >
                 <span class="vertical-rl tracking-normal">过道</span>
               </div>
+              <button
+                v-for="pair in deskPairHandles"
+                :key="`pair:${pair.row}:${pair.startColumn}`"
+                class="flex min-h-full items-center justify-center rounded-md text-stone-400 transition hover:bg-stone-200 hover:text-stone-700"
+                :class="{
+                  'bg-stone-950 text-white': isPairDragTarget(pair.row, pair.startColumn),
+                  'opacity-40': draggedPairKey === pairKey(pair.row, pair.startColumn)
+                }"
+                :style="{ gridColumn: deskPairHandleGridColumn(pair.startColumn), gridRow: pair.row + 1 }"
+                draggable="true"
+                title="拖动以交换同桌"
+                type="button"
+                @dragstart="startPairDrag(pair.row, pair.startColumn, $event)"
+                @dragenter.prevent="setPairDragTarget(pair.row, pair.startColumn)"
+                @dragover.prevent="setPairDragTarget(pair.row, pair.startColumn)"
+                @drop.prevent="swapDraggedPair(pair.row, pair.startColumn)"
+                @dragend="clearPairDrag"
+              >
+                <span class="flex flex-col items-center gap-1">
+                  <span class="h-1 w-1 rounded-full bg-current" />
+                  <span class="h-1 w-1 rounded-full bg-current" />
+                  <span class="h-1 w-1 rounded-full bg-current" />
+                </span>
+              </button>
               <div
                 v-for="seat in sortedSeats"
                 :key="seatKey(seat)"
@@ -421,12 +706,13 @@ onMounted(() => {
                 :style="{ gridColumn: seatGridColumn(seat.column), gridRow: seat.row + 1 }"
                 :class="{
                   'border-stone-950 bg-amber-50 shadow-lg ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100 scale-[1.02]': dragOverSeatKey === seatKey(seat),
-                  'border-stone-400 bg-white opacity-70': draggedSeatKey === seatKey(seat),
-                  'border-stone-200 bg-white': draggedSeatKey !== seatKey(seat) && dragOverSeatKey !== seatKey(seat)
+                  'border-stone-950 bg-stone-50 shadow-lg ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100': isSeatInPair(seat, dragOverPairKey),
+                  'border-stone-400 bg-white opacity-70': draggedSeatKey === seatKey(seat) || isSeatInPair(seat, draggedPairKey),
+                  'border-stone-200 bg-white': draggedSeatKey !== seatKey(seat) && dragOverSeatKey !== seatKey(seat) && !isSeatInPair(seat, draggedPairKey) && !isSeatInPair(seat, dragOverPairKey)
                 }"
                 @dragenter.prevent="setSeatDragTarget(seat)"
                 @dragover.prevent="setSeatDragTarget(seat)"
-                @drop.prevent="swapDraggedSeat(seat)"
+                @drop.prevent="dropOnSeat(seat)"
               >
                 <div
                   class="mb-2 truncate rounded-md px-1 py-1 text-xs text-stone-500 transition hover:bg-stone-100"
