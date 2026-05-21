@@ -7,6 +7,7 @@ const props = defineProps<{
   columns: number;
   doorSide: DoorSide;
   aisleAfterColumns: number[];
+  showStudentNo: boolean;
   seats: Seat[];
 }>();
 
@@ -92,16 +93,23 @@ function aisleGridColumn(column: number) {
         <div
           v-for="cell in seatCells"
           :key="cell.key"
-          class="min-h-20 rounded-lg border border-stone-200 bg-white px-4 py-3 shadow-sm"
+          class="rounded-lg border border-stone-200 bg-white px-4 py-3 shadow-sm"
+          :class="props.showStudentNo ? 'min-h-20' : 'min-h-24 flex items-center justify-center'"
           :style="{ gridColumn: cell.gridColumn, gridRow: cell.row + 1 }"
         >
           <template v-if="seatMap.get(cell.key)">
-            <div class="truncate text-base font-medium text-stone-950">
+            <div
+              class="truncate font-medium text-stone-950"
+              :class="props.showStudentNo ? 'text-base' : 'w-full text-center text-xl leading-7'"
+            >
               {{
                 seatMap.get(cell.key)?.name || "空座"
               }}
             </div>
-            <div class="mt-1 truncate text-sm text-stone-500">
+            <div
+              v-if="props.showStudentNo"
+              class="mt-1 truncate text-sm text-stone-500"
+            >
               {{
                 seatMap.get(cell.key)?.studentNo || "未填写学号"
               }}

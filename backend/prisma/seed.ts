@@ -16,6 +16,7 @@ await updateActivePlan({
   columns: 5,
   doorSide: "right",
   aisleAfterColumns: [1, 3],
+  showStudentNo: true,
   seats: names.map(([name, studentNo], index) => ({
     row: Math.floor(index / 5),
     column: index % 5,

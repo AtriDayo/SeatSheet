@@ -13,6 +13,7 @@ export const planUpdateSchema = z.object({
   columns: z.number().int().min(1).max(30),
   doorSide: z.enum(["left", "right"]),
   aisleAfterColumns: z.array(z.number().int().min(0)).default([]),
+  showStudentNo: z.boolean().default(true),
   seats: z.array(seatInputSchema)
 }).superRefine((plan, context) => {
   const aisleAfterColumns = new Set(plan.aisleAfterColumns);

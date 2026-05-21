@@ -15,6 +15,7 @@ export interface SeatPlan {
   columns: number;
   doorSide: DoorSide;
   aisleAfterColumns: number[];
+  showStudentNo: boolean;
   seats: Seat[];
   createdAt: string;
   updatedAt: string;
@@ -26,5 +27,6 @@ export interface EditableSeatPlan {
   columns: number;
   doorSide: DoorSide;
   aisleAfterColumns: number[];
+  showStudentNo: boolean;
   seats: Seat[];
 }

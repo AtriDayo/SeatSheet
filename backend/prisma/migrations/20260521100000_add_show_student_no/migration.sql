@@ -1,0 +1,1 @@
+ALTER TABLE "SeatPlan" ADD COLUMN "showStudentNo" BOOLEAN NOT NULL DEFAULT true;

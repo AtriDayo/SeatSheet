@@ -22,6 +22,7 @@ const form = reactive<EditableSeatPlan>({
   columns: 6,
   doorSide: "right",
   aisleAfterColumns: [],
+  showStudentNo: true,
   seats: []
 });
 
@@ -137,6 +138,7 @@ async function loadPlan() {
     form.columns = plan.columns;
     form.doorSide = plan.doorSide;
     form.aisleAfterColumns = plan.aisleAfterColumns ?? [];
+    form.showStudentNo = plan.showStudentNo ?? true;
     form.seats = plan.seats.map((seat) => ({
       row: seat.row,
       column: seat.column,
@@ -348,6 +350,7 @@ function exportJson() {
     columns: Number(form.columns),
     doorSide: form.doorSide,
     aisleAfterColumns: validAisleAfterColumns.value,
+    showStudentNo: form.showStudentNo,
     seats: sortedSeats.value.map((seat) => ({
       row: seat.row,
       column: seat.column,
@@ -396,6 +399,7 @@ async function importJson(event: Event) {
           .map(Number)
           .filter((column) => Number.isInteger(column) && column >= 0 && column < columns - 1)
       : [];
+    form.showStudentNo = payload.showStudentNo !== false;
     form.seats = Array.isArray(payload.seats)
       ? payload.seats
           .map((seat) => ({
@@ -434,6 +438,7 @@ async function submit() {
       columns: Number(form.columns),
       doorSide: form.doorSide,
       aisleAfterColumns: validAisleAfterColumns.value,
+      showStudentNo: form.showStudentNo,
       seats: form.seats
     }, adminPassword.value);
     form.name = plan.name;
@@ -441,6 +446,7 @@ async function submit() {
     form.columns = plan.columns;
     form.doorSide = plan.doorSide;
     form.aisleAfterColumns = plan.aisleAfterColumns ?? [];
+    form.showStudentNo = plan.showStudentNo ?? true;
     form.seats = plan.seats;
     message.value = "已保存";
   } catch (err) {
@@ -587,6 +593,19 @@ onMounted(() => {
               <option value="left">左侧</option>
               <option value="right">右侧</option>
             </select>
+          </label>
+          <label class="flex items-end">
+            <span class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700">
+              <span class="mb-2 block text-sm text-stone-500">显示学号</span>
+              <span class="flex items-center gap-2">
+                <input
+                  v-model="form.showStudentNo"
+                  type="checkbox"
+                  class="h-4 w-4 rounded border-stone-300 text-stone-950 focus:ring-stone-950"
+                />
+                <span>{{ form.showStudentNo ? "开启" : "关闭" }}</span>
+              </span>
+            </span>
           </label>
           <div class="flex items-end gap-2">
             <button

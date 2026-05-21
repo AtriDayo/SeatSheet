@@ -15,6 +15,7 @@ model SeatPlan {
   columns   Int
   doorSide  String   @default("right")
   aisleAfterColumns Int[]    @default([])
+  showStudentNo Boolean @default(true)
   isActive  Boolean  @default(true)
   seats     Seat[]
   createdAt DateTime @default(now())
