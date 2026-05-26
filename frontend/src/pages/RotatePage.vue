@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import SeatGrid from "../components/SeatGrid.vue";
 import { fetchSeatPlan, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
 import { useAdminSession } from "../state/adminSession";
 import type {
@@ -21,8 +20,9 @@ const authenticating = ref(false);
 const loginPassword = ref("");
 const message = ref("");
 const error = ref("");
-const previewFrameIndex = ref(0);
 const playingPreview = ref(false);
+const previewRuleIndex = ref(-1);
+const previewPhase = ref<"idle" | "highlight" | "move" | "settle">("idle");
 let previewTimer: ReturnType<typeof setTimeout> | null = null;
 
 const { adminPassword, authenticated, setAdminPassword, clearAdminSession } = useAdminSession();
@@ -44,9 +44,50 @@ const previewFrames = computed(() =>
   buildRotationFrames(form.seats, groups.value, form.rotationConfig)
 );
 
-const activePreviewFrame = computed(() =>
-  previewFrames.value[Math.min(previewFrameIndex.value, previewFrames.value.length - 1)] ?? previewFrames.value[0]
+const currentPreviewRule = computed(() =>
+  previewRuleIndex.value >= 0
+    ? form.rotationConfig.rules[previewRuleIndex.value] ?? null
+    : null
 );
+
+const previewBaseFrame = computed(() =>
+  previewRuleIndex.value >= 0
+    ? previewFrames.value[previewRuleIndex.value] ?? previewFrames.value[0]
+    : previewFrames.value[0]
+);
+
+const previewSettledFrame = computed(() =>
+  previewRuleIndex.value >= 0
+    ? previewFrames.value[previewRuleIndex.value + 1] ?? previewBaseFrame.value
+    : previewFrames.value[0]
+);
+
+const activePreviewFrame = computed(() =>
+  previewPhase.value === "settle" ? previewSettledFrame.value : previewBaseFrame.value
+);
+
+const activePreviewLabel = computed(() => {
+  if (previewRuleIndex.value < 0) {
+    return "当前座位";
+  }
+
+  const rule = currentPreviewRule.value;
+  const prefix = `规则 ${previewRuleIndex.value + 1}`;
+
+  if (!rule) {
+    return prefix;
+  }
+
+  if (rule.type === "groupSwap") {
+    return `${prefix}：大组互换`;
+  }
+
+  if (rule.type === "groupCycle") {
+    return `${prefix}：环形轮换`;
+  }
+
+  return `${prefix}：手动互换`;
+});
 
 const groupOptions = computed(() =>
   groups.value.map((group) => ({
@@ -67,6 +108,32 @@ const seatOptions = computed(() =>
       label: `第 ${row + 1} 排 / 第 ${column + 1} 列`
     };
   })
+);
+
+const validPreviewAisleAfterColumns = computed(() =>
+  [...new Set(form.aisleAfterColumns)]
+    .filter((column) => column >= 0 && column < form.columns - 1)
+    .sort((a, b) => a - b)
+);
+
+const previewAisleColumnSet = computed(() => new Set(validPreviewAisleAfterColumns.value));
+
+const previewGridTemplateColumns = computed(() => {
+  const tracks: string[] = [];
+
+  for (let column = 0; column < form.columns; column += 1) {
+    tracks.push("8rem");
+
+    if (previewAisleColumnSet.value.has(column)) {
+      tracks.push("2rem");
+    }
+  }
+
+  return tracks.join(" ");
+});
+
+const sortedPreviewSeats = computed(() =>
+  [...(activePreviewFrame.value?.seats ?? form.seats)].sort((a, b) => a.row - b.row || a.column - b.column)
 );
 
 function createRuleId(prefix: string) {
@@ -140,7 +207,7 @@ async function loadPlan() {
   try {
     const plan = await fetchSeatPlan();
     Object.assign(form, toEditablePlan(plan));
-    previewFrameIndex.value = 0;
+    resetPreview();
   } catch (err) {
     error.value = err instanceof Error ? err.message : "加载失败";
   } finally {
@@ -278,29 +345,159 @@ function seatSwapValue(rule: RotationSeatSwapRule, field: "source" | "target") {
     : `${rule.targetRow}:${rule.targetColumn}`;
 }
 
+function previewSeatGridColumn(column: number) {
+  return column + 1 + validPreviewAisleAfterColumns.value.filter((aisleColumn) => aisleColumn < column).length;
+}
+
+function previewAisleGridColumn(column: number) {
+  return column + 2 + validPreviewAisleAfterColumns.value.filter((aisleColumn) => aisleColumn < column).length;
+}
+
+function cyclicIndex(length: number, current: number) {
+  return ((current % length) + length) % length;
+}
+
+function previewPositionTerms(row: number, column: number) {
+  const aisleCount = validPreviewAisleAfterColumns.value.filter((aisleColumn) => aisleColumn < column).length;
+
+  return {
+    row,
+    seatColumns: column,
+    aisleColumns: aisleCount,
+    gaps: column + aisleCount
+  };
+}
+
+function previewTranslate(fromRow: number, fromColumn: number, toRow: number, toColumn: number) {
+  const from = previewPositionTerms(fromRow, fromColumn);
+  const to = previewPositionTerms(toRow, toColumn);
+  const rowDelta = to.row - from.row;
+  const seatColumnDelta = to.seatColumns - from.seatColumns;
+  const aisleColumnDelta = to.aisleColumns - from.aisleColumns;
+  const gapDelta = to.gaps - from.gaps;
+
+  return `translate(calc(${seatColumnDelta} * 8rem + ${aisleColumnDelta} * 2rem + ${gapDelta} * 0.5rem), calc(${rowDelta} * 5.5rem + ${rowDelta} * 0.5rem))`;
+}
+
+function previewTargetForSeat(seat: Seat) {
+  const rule = currentPreviewRule.value;
+
+  if (!rule) {
+    return null;
+  }
+
+  if (rule.type === "seatSwap") {
+    if (seat.row === rule.sourceRow && seat.column === rule.sourceColumn) {
+      return { row: rule.targetRow, column: rule.targetColumn };
+    }
+
+    if (seat.row === rule.targetRow && seat.column === rule.targetColumn) {
+      return { row: rule.sourceRow, column: rule.sourceColumn };
+    }
+
+    return null;
+  }
+
+  if (rule.type === "groupSwap") {
+    const sourceGroup = groups.value.find((group) => group.index === rule.sourceGroupIndex);
+    const targetGroup = groups.value.find((group) => group.index === rule.targetGroupIndex);
+
+    if (!sourceGroup || !targetGroup || sourceGroup.width !== targetGroup.width) {
+      return null;
+    }
+
+    const sourceOffset = sourceGroup.columns.indexOf(seat.column);
+    if (sourceOffset >= 0) {
+      return { row: seat.row, column: targetGroup.columns[sourceOffset] };
+    }
+
+    const targetOffset = targetGroup.columns.indexOf(seat.column);
+    if (targetOffset >= 0) {
+      return { row: seat.row, column: sourceGroup.columns[targetOffset] };
+    }
+
+    return null;
+  }
+
+  const group = groups.value.find((item) => item.index === rule.groupIndex);
+
+  if (!group || !group.columns.includes(seat.column)) {
+    return null;
+  }
+
+  const groupSeats = [...(previewBaseFrame.value?.seats ?? [])]
+    .filter((item) => group.columns.includes(item.column))
+    .sort((a, b) => a.row - b.row || a.column - b.column);
+  const currentIndex = groupSeats.findIndex((item) => item.row === seat.row && item.column === seat.column);
+
+  if (currentIndex < 0) {
+    return null;
+  }
+
+  const step = rule.direction === "forward" ? rule.steps : -rule.steps;
+  const target = groupSeats[cyclicIndex(groupSeats.length, currentIndex + step)];
+  return target ? { row: target.row, column: target.column } : null;
+}
+
+function isPreviewSeatActive(seat: Seat) {
+  return Boolean(previewTargetForSeat(seat));
+}
+
+function previewSeatStyle(seat: Seat) {
+  const target = previewTargetForSeat(seat);
+  const transform =
+    previewPhase.value === "move" && target
+      ? `${previewTranslate(seat.row, seat.column, target.row, target.column)} scale(1.04)`
+      : undefined;
+
+  return {
+    gridColumn: previewSeatGridColumn(seat.column),
+    gridRow: seat.row + 1,
+    transform
+  };
+}
+
 function playPreview() {
   stopPreview();
 
-  if (previewFrames.value.length <= 1) {
-    previewFrameIndex.value = 0;
+  if (form.rotationConfig.rules.length === 0) {
+    resetPreview();
     return;
   }
 
   playingPreview.value = true;
-  previewFrameIndex.value = 0;
+  runPreviewRule(0);
+}
 
-  const advance = () => {
-    if (previewFrameIndex.value >= previewFrames.value.length - 1) {
-      playingPreview.value = false;
-      previewTimer = null;
-      return;
-    }
+function runPreviewRule(index: number) {
+  if (index >= form.rotationConfig.rules.length) {
+    previewRuleIndex.value = Math.max(form.rotationConfig.rules.length - 1, -1);
+    previewPhase.value = form.rotationConfig.rules.length > 0 ? "settle" : "idle";
+    playingPreview.value = false;
+    previewTimer = null;
+    return;
+  }
 
-    previewFrameIndex.value += 1;
-    previewTimer = setTimeout(advance, 700);
-  };
+  previewRuleIndex.value = index;
+  previewPhase.value = "highlight";
 
-  previewTimer = setTimeout(advance, 700);
+  previewTimer = setTimeout(() => {
+    previewPhase.value = "move";
+
+    previewTimer = setTimeout(() => {
+      previewPhase.value = "settle";
+
+      previewTimer = setTimeout(() => {
+        runPreviewRule(index + 1);
+      }, 360);
+    }, 820);
+  }, 520);
+}
+
+function resetPreview() {
+  stopPreview();
+  previewRuleIndex.value = -1;
+  previewPhase.value = "idle";
 }
 
 function stopPreview() {
@@ -310,6 +507,90 @@ function stopPreview() {
   }
 
   playingPreview.value = false;
+}
+
+function previewButtonText() {
+  if (playingPreview.value) {
+    return "播放中";
+  }
+
+  if (previewRuleIndex.value >= 0) {
+    return "重新播放";
+  }
+
+  return "播放预览";
+}
+
+function previewPhaseClass(seat: Seat) {
+  if (!isPreviewSeatActive(seat)) {
+    return "border-stone-200 bg-white";
+  }
+
+  if (previewPhase.value === "highlight") {
+    return "z-20 scale-[1.04] border-stone-950 bg-amber-50 shadow-xl ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100";
+  }
+
+  if (previewPhase.value === "move") {
+    return "z-30 scale-[1.04] border-stone-950 bg-white shadow-2xl ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100";
+  }
+
+  if (previewPhase.value === "settle") {
+    return "border-emerald-300 bg-emerald-50 shadow-md";
+  }
+
+  return "border-stone-200 bg-white";
+}
+
+function inactivePreviewClass(seat: Seat) {
+  if (previewPhase.value !== "move" || isPreviewSeatActive(seat)) {
+    return "";
+  }
+
+  return "opacity-80";
+}
+
+function activeSeatName(seat: Seat) {
+  return seat.name || "空座";
+}
+
+function activeSeatStudentNo(seat: Seat) {
+  return seat.studentNo || "未填写学号";
+}
+
+function previewSeatClass(seat: Seat) {
+  return [
+    "relative h-[5.5rem] w-32 min-w-0 rounded-lg border px-3 py-2 shadow-sm transition-[transform,opacity,box-shadow,border-color,background-color] duration-700 ease-in-out will-change-transform",
+    previewPhaseClass(seat),
+    inactivePreviewClass(seat)
+  ].join(" ");
+}
+
+function previewSeatTitleClass() {
+  return form.showStudentNo ? "truncate text-base font-medium text-stone-950" : "flex h-full items-center justify-center text-center text-xl font-medium leading-7 text-stone-950";
+}
+
+function previewSeatNoClass() {
+  return "mt-1 truncate text-sm text-stone-500";
+}
+
+function previewStatusText() {
+  if (form.rotationConfig.rules.length === 0) {
+    return "暂无规则";
+  }
+
+  if (previewRuleIndex.value < 0) {
+    return "预览会按规则顺序播放";
+  }
+
+  if (previewPhase.value === "highlight") {
+    return "高亮参与轮换的位置";
+  }
+
+  if (previewPhase.value === "move") {
+    return "正在移动";
+  }
+
+  return "已到达目标位置";
 }
 
 async function saveRules() {
@@ -348,7 +629,7 @@ async function executeRotation() {
       seats: finalSeats.map(cloneSeat)
     }, adminPassword.value);
     Object.assign(form, toEditablePlan(plan));
-    previewFrameIndex.value = 0;
+    resetPreview();
     message.value = "已执行一键轮换";
   } catch (err) {
     error.value = err instanceof Error ? err.message : "执行失败";
@@ -361,7 +642,7 @@ watch(
   () => [form.rows, form.columns, form.aisleAfterColumns.join(","), form.seats.length],
   () => {
     form.rotationConfig = normalizeRotationConfig(form.rotationConfig);
-    previewFrameIndex.value = Math.min(previewFrameIndex.value, Math.max(previewFrames.value.length - 1, 0));
+    resetPreview();
   }
 );
 
@@ -644,44 +925,98 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="mx-auto max-w-6xl rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-          <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div class="text-sm text-stone-500">动画预览</div>
-              <div class="text-base font-medium text-stone-950">
-                {{ activePreviewFrame?.label || "当前座位" }}
+        <div class="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div class="text-sm text-stone-500">动画预览</div>
+            <div class="text-base font-medium text-stone-950">{{ activePreviewLabel }}</div>
+            <div class="text-sm text-stone-500">{{ previewStatusText() }}</div>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              class="rounded-lg border px-3 py-2 text-sm transition disabled:cursor-not-allowed"
+              :class="form.rotationConfig.rules.length > 0
+                ? 'border-stone-950 bg-stone-950 text-white hover:bg-stone-800'
+                : 'border-stone-300 bg-stone-200 text-stone-400'"
+              type="button"
+              :disabled="form.rotationConfig.rules.length === 0"
+              @click="playPreview"
+            >
+              {{ previewButtonText() }}
+            </button>
+            <button
+              class="rounded-lg border px-3 py-2 text-sm transition disabled:cursor-not-allowed"
+              :class="previewRuleIndex >= 0 || playingPreview
+                ? 'border-stone-300 text-stone-700 hover:border-stone-950 hover:text-stone-950'
+                : 'border-stone-200 text-stone-400'"
+              type="button"
+              :disabled="previewRuleIndex < 0 && !playingPreview"
+              @click="resetPreview"
+            >
+              回到开始
+            </button>
+          </div>
+        </div>
+
+        <div v-if="form.rotationConfig.rules.length > 0" class="mx-auto flex max-w-6xl flex-wrap gap-2 text-xs">
+          <span
+            v-for="(rule, index) in form.rotationConfig.rules"
+            :key="rule.id"
+            class="rounded-lg border px-2 py-1 transition"
+            :class="index === previewRuleIndex
+              ? 'border-stone-950 bg-stone-950 text-white'
+              : 'border-stone-300 bg-white text-stone-600'"
+          >
+            {{ index + 1 }}.
+            {{ rule.type === "groupSwap" ? "大组互换" : rule.type === "groupCycle" ? "环形轮换" : "手动互换" }}
+          </span>
+        </div>
+
+        <div class="w-full overflow-x-auto pb-2">
+          <div class="mx-auto flex w-max items-stretch gap-3">
+            <div v-if="form.doorSide === 'left'" class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1">
+              <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
+                前门
+              </div>
+              <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
+              <div class="rounded-lg border border-stone-300 bg-white px-2 py-3 text-center text-sm font-medium text-stone-800 shadow-sm">
+                后门
               </div>
             </div>
-            <div class="flex gap-2">
-              <button
-                class="rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
-                type="button"
-                @click="playPreview"
+
+            <div class="grid gap-2" :style="{ gridTemplateColumns: previewGridTemplateColumns }">
+              <div
+                v-for="column in validPreviewAisleAfterColumns"
+                :key="`preview-aisle:${column}`"
+                class="pointer-events-none flex min-h-full items-center justify-center border-x border-dashed border-stone-400 text-xs font-medium text-stone-500"
+                :style="{ gridColumn: previewAisleGridColumn(column), gridRow: `1 / span ${form.rows}` }"
               >
-                {{ playingPreview ? "播放中" : "播放预览" }}
-              </button>
-              <button
-                class="rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
-                type="button"
-                @click="stopPreview(); previewFrameIndex = 0"
+                <span class="vertical-rl tracking-normal">过道</span>
+              </div>
+              <div
+                v-for="seat in sortedPreviewSeats"
+                :key="`${seat.row}:${seat.column}`"
+                :class="previewSeatClass(seat)"
+                :style="previewSeatStyle(seat)"
               >
-                回到开始
-              </button>
+                <div :class="form.showStudentNo ? '' : 'flex h-full items-center justify-center'">
+                  <div :class="previewSeatTitleClass()">{{ activeSeatName(seat) }}</div>
+                  <div v-if="form.showStudentNo" :class="previewSeatNoClass()">
+                    {{ activeSeatStudentNo(seat) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="form.doorSide === 'right'" class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1">
+              <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
+                前门
+              </div>
+              <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
+              <div class="rounded-lg border border-stone-300 bg-white px-2 py-3 text-center text-sm font-medium text-stone-800 shadow-sm">
+                后门
+              </div>
             </div>
           </div>
-
-          <Transition name="fade-slide" mode="out-in">
-            <div :key="`${activePreviewFrame?.label}-${previewFrameIndex}`">
-              <SeatGrid
-                :rows="form.rows"
-                :columns="form.columns"
-                :door-side="form.doorSide"
-                :aisle-after-columns="form.aisleAfterColumns"
-                :show-student-no="form.showStudentNo"
-                :seats="activePreviewFrame?.seats ?? form.seats"
-              />
-            </div>
-          </Transition>
         </div>
 
         <div class="mx-auto flex max-w-6xl flex-wrap gap-2">
@@ -712,16 +1047,3 @@ onUnmounted(() => {
     </section>
   </main>
 </template>
-
-<style scoped>
-.fade-slide-enter-active,
-.fade-slide-leave-active {
-  transition: opacity 220ms ease, transform 220ms ease;
-}
-
-.fade-slide-enter-from,
-.fade-slide-leave-to {
-  opacity: 0;
-  transform: translateY(8px) scale(0.98);
-}
-</style>
