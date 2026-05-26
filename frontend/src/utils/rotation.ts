@@ -40,6 +40,20 @@ function cyclicIndex(length: number, current: number) {
   return ((current % length) + length) % length;
 }
 
+function deskPairColumnsForGroup(group: SeatGroup) {
+  const pairs: number[][] = [];
+
+  for (let index = 0; index < group.columns.length; index += 2) {
+    const pair = group.columns.slice(index, index + 2);
+
+    if (pair.length === 2) {
+      pairs.push(pair);
+    }
+  }
+
+  return pairs;
+}
+
 export function deriveSeatGroups(columns: number, aisleAfterColumns: number[]) {
   const aisles = [...new Set(aisleAfterColumns)]
     .filter((column) => column >= 0 && column < columns - 1)
@@ -133,24 +147,33 @@ function applyGroupCycleRule(
     return nextSeats;
   }
 
-  const groupSeats = nextSeats
-    .filter((seat) => group.columns.includes(seat.column))
-    .sort((a, b) => a.row - b.row || a.column - b.column);
+  const map = seatMap(nextSeats);
+  const groupPairs = Array.from({ length: Math.max(...nextSeats.map((seat) => seat.row), 0) + 1 }, (_, row) =>
+    deskPairColumnsForGroup(group)
+      .map((columns) => columns.map((column) => map.get(seatKey(row, column))).filter((seat): seat is Seat => Boolean(seat)))
+      .filter((pair) => pair.length > 0)
+  ).flat();
 
-  if (groupSeats.length <= 1) {
+  if (groupPairs.length <= 1) {
     return nextSeats;
   }
 
-  const payloads = groupSeats.map((seat) => ({
-    name: seat.name,
-    studentNo: seat.studentNo
-  }));
+  const payloads = groupPairs.map((pair) =>
+    pair.map((seat) => ({
+      name: seat.name,
+      studentNo: seat.studentNo
+    }))
+  );
   const step = rule.direction === "forward" ? rule.steps : -rule.steps;
 
-  groupSeats.forEach((seat, index) => {
-    const payload = payloads[cyclicIndex(groupSeats.length, index - step)];
-    seat.name = payload.name;
-    seat.studentNo = payload.studentNo;
+  groupPairs.forEach((pair, index) => {
+    const payload = payloads[cyclicIndex(groupPairs.length, index - step)];
+
+    pair.forEach((seat, seatIndex) => {
+      const seatPayload = payload[seatIndex] ?? { name: null, studentNo: null };
+      seat.name = seatPayload.name;
+      seat.studentNo = seatPayload.studentNo;
+    });
   });
 
   return nextSeats;

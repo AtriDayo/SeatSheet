@@ -68,6 +68,12 @@ const previewBaseFrame = computed(() =>
     : previewFrames.value[0]
 );
 
+const previewSettledFrame = computed(() =>
+  previewRuleIndex.value >= 0
+    ? previewFrames.value[previewRuleIndex.value + 1] ?? previewBaseFrame.value
+    : previewFrames.value[0]
+);
+
 const activePreviewLabel = computed(() => {
   if (previewRuleIndex.value < 0) {
     return "当前座位";
@@ -135,7 +141,9 @@ const previewGridTemplateColumns = computed(() => {
 });
 
 const previewUnits = computed(() =>
-  buildPreviewUnits(previewBaseFrame.value?.seats ?? form.seats)
+  previewPhase.value === "settle"
+    ? buildSettledPreviewUnits(previewSettledFrame.value?.seats ?? form.seats)
+    : buildPreviewUnits(previewBaseFrame.value?.seats ?? form.seats)
 );
 
 function createRuleId(prefix: string) {
@@ -393,15 +401,40 @@ function seatMap(seats: Seat[]) {
   return new Map(seats.map((seat) => [seatKey(seat.row, seat.column), seat]));
 }
 
+function seatPayloadKey(seat: Seat) {
+  if (seat.name || seat.studentNo) {
+    return `${seat.name ?? ""}:${seat.studentNo ?? ""}`;
+  }
+
+  return `empty:${seat.row}:${seat.column}`;
+}
+
 function createSeatUnit(seat: Seat, target?: { row: number; column: number }): PreviewUnit {
   return {
-    key: `seat:${seat.row}:${seat.column}`,
+    key: `seat:${seatPayloadKey(seat)}`,
     row: seat.row,
     column: seat.column,
     columnSpan: 1,
     seats: [seat],
     target
   };
+}
+
+function buildStaticPreviewUnits(seats: Seat[]) {
+  return sortSeats(seats).map((seat) => createSeatUnit(seat));
+}
+
+function buildSettledPreviewUnits(seats: Seat[]) {
+  const rule = currentPreviewRule.value;
+
+  if (rule?.type === "groupCycle") {
+    return buildGroupCyclePreviewUnits(seats, rule).map((unit) => ({
+      ...unit,
+      target: undefined
+    }));
+  }
+
+  return buildStaticPreviewUnits(seats);
 }
 
 function targetForSeatSwap(seat: Seat, rule: RotationSeatSwapRule) {
@@ -460,7 +493,11 @@ function deskPairColumnsForGroup(group: SeatGroup) {
   const pairs: number[][] = [];
 
   for (let index = 0; index < group.columns.length; index += 2) {
-    pairs.push(group.columns.slice(index, index + 2));
+    const pair = group.columns.slice(index, index + 2);
+
+    if (pair.length === 2) {
+      pairs.push(pair);
+    }
   }
 
   return pairs;
@@ -489,7 +526,7 @@ function buildGroupCyclePreviewUnits(seats: Seat[], rule: RotationGroupCycleRule
       }
 
       const unit: PreviewUnit = {
-        key: `pair:${row}:${columns[0]}`,
+        key: `pair:${unitSeats.map(seatPayloadKey).join("|")}`,
         row,
         column: columns[0],
         columnSpan: columns.length,
@@ -501,8 +538,10 @@ function buildGroupCyclePreviewUnits(seats: Seat[], rule: RotationGroupCycleRule
     });
   }
 
+  const movingColumns = new Set(pairColumns.flat());
+
   sortSeats(seats)
-    .filter((seat) => !group.columns.includes(seat.column))
+    .filter((seat) => !movingColumns.has(seat.column))
     .forEach((seat) => units.push(createSeatUnit(seat)));
 
   const step = rule.direction === "forward" ? rule.steps : -rule.steps;
@@ -530,7 +569,7 @@ function isPreviewUnitActive(unit: PreviewUnit) {
 
 function previewUnitStyle(unit: PreviewUnit) {
   const transform =
-    (previewPhase.value === "move" || previewPhase.value === "settle") && unit.target
+    previewPhase.value === "move" && unit.target
       ? `${previewTranslate(unit.row, unit.column, unit.target.row, unit.target.column)} scale(1.04)`
       : undefined;
 
