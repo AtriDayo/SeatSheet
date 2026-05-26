@@ -13,7 +13,7 @@ import type {
   Seat,
   SeatPlan
 } from "../types/seat";
-import { applyRotationRule, buildRotationFrames, deriveSeatGroups } from "../utils/rotation";
+import { buildRotationFrames, deriveSeatGroups, type SeatGroup } from "../utils/rotation";
 
 const loading = ref(true);
 const saving = ref(false);
@@ -83,16 +83,20 @@ function cloneSeat(seat: Seat): Seat {
   };
 }
 
-function normalizeRotationConfig(config: RotationConfig) {
-  const validGroupIndexes = new Set(groups.value.map((group) => group.index));
-  const validSeatKeys = new Set(form.seats.map((seat) => `${seat.row}:${seat.column}`));
+function normalizeRotationConfig(
+  config: RotationConfig,
+  seats: Seat[] = form.seats,
+  seatGroups: SeatGroup[] = groups.value
+) {
+  const validGroupIndexes = new Set(seatGroups.map((group) => group.index));
+  const validSeatKeys = new Set(seats.map((seat) => `${seat.row}:${seat.column}`));
 
   return {
     rules: config.rules.filter((rule) => {
       switch (rule.type) {
         case "groupSwap": {
-          const sourceGroup = groups.value.find((group) => group.index === rule.sourceGroupIndex);
-          const targetGroup = groups.value.find((group) => group.index === rule.targetGroupIndex);
+          const sourceGroup = seatGroups.find((group) => group.index === rule.sourceGroupIndex);
+          const targetGroup = seatGroups.find((group) => group.index === rule.targetGroupIndex);
           return Boolean(
             sourceGroup &&
             targetGroup &&
@@ -113,15 +117,19 @@ function normalizeRotationConfig(config: RotationConfig) {
 }
 
 function toEditablePlan(plan: SeatPlan): EditableSeatPlan {
+  const seats = plan.seats.map(cloneSeat);
+  const aisleAfterColumns = plan.aisleAfterColumns ?? [];
+  const seatGroups = deriveSeatGroups(plan.columns, aisleAfterColumns);
+
   return {
     name: plan.name,
     rows: plan.rows,
     columns: plan.columns,
     doorSide: plan.doorSide,
-    aisleAfterColumns: plan.aisleAfterColumns ?? [],
+    aisleAfterColumns,
     showStudentNo: plan.showStudentNo ?? true,
-    rotationConfig: normalizeRotationConfig(plan.rotationConfig ?? { rules: [] }),
-    seats: plan.seats.map(cloneSeat)
+    rotationConfig: normalizeRotationConfig(plan.rotationConfig ?? { rules: [] }, seats, seatGroups),
+    seats
   };
 }
 
@@ -350,12 +358,11 @@ async function executeRotation() {
 }
 
 watch(
-  () => [form.rows, form.columns, form.aisleAfterColumns, form.rotationConfig.rules.length],
+  () => [form.rows, form.columns, form.aisleAfterColumns.join(","), form.seats.length],
   () => {
     form.rotationConfig = normalizeRotationConfig(form.rotationConfig);
     previewFrameIndex.value = Math.min(previewFrameIndex.value, Math.max(previewFrames.value.length - 1, 0));
-  },
-  { deep: true }
+  }
 );
 
 onMounted(() => {
