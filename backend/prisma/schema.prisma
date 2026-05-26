@@ -16,6 +16,7 @@ model SeatPlan {
   doorSide  String   @default("right")
   aisleAfterColumns Int[]    @default([])
   showStudentNo Boolean @default(true)
+  rotationConfig Json @default("{\"rules\":[]}")
   isActive  Boolean  @default(true)
   seats     Seat[]
   createdAt DateTime @default(now())

@@ -2,12 +2,12 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { fetchSeatPlan, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
 import type { EditableSeatPlan, Seat } from "../types/seat";
+import { useAdminSession } from "../state/adminSession";
 
 const loading = ref(true);
 const saving = ref(false);
 const authenticating = ref(false);
-const authenticated = ref(false);
-const adminPassword = ref("");
+const loginPassword = ref("");
 const message = ref("");
 const error = ref("");
 const importFileInput = ref<HTMLInputElement | null>(null);
@@ -15,6 +15,7 @@ const draggedSeatKey = ref<string | null>(null);
 const dragOverSeatKey = ref<string | null>(null);
 const draggedPairKey = ref<string | null>(null);
 const dragOverPairKey = ref<string | null>(null);
+const { adminPassword, authenticated, setAdminPassword, clearAdminSession } = useAdminSession();
 
 const form = reactive<EditableSeatPlan>({
   name: "座位表",
@@ -23,6 +24,7 @@ const form = reactive<EditableSeatPlan>({
   doorSide: "right",
   aisleAfterColumns: [],
   showStudentNo: true,
+  rotationConfig: { rules: [] },
   seats: []
 });
 
@@ -139,6 +141,7 @@ async function loadPlan() {
     form.doorSide = plan.doorSide;
     form.aisleAfterColumns = plan.aisleAfterColumns ?? [];
     form.showStudentNo = plan.showStudentNo ?? true;
+    form.rotationConfig = plan.rotationConfig ?? { rules: [] };
     form.seats = plan.seats.map((seat) => ({
       row: seat.row,
       column: seat.column,
@@ -158,11 +161,11 @@ async function authenticate() {
   error.value = "";
 
   try {
-    await verifyAdminPassword(adminPassword.value);
-    authenticated.value = true;
+    await verifyAdminPassword(loginPassword.value);
+    setAdminPassword(loginPassword.value);
     await loadPlan();
   } catch (err) {
-    adminPassword.value = "";
+    loginPassword.value = "";
     error.value = err instanceof Error ? err.message : "管理密码错误";
   } finally {
     authenticating.value = false;
@@ -170,8 +173,8 @@ async function authenticate() {
 }
 
 function leaveAdmin() {
-  authenticated.value = false;
-  adminPassword.value = "";
+  clearAdminSession();
+  loginPassword.value = "";
   form.seats = [];
   clearSeatDrag();
   clearPairDrag();
@@ -351,6 +354,7 @@ function exportJson() {
     doorSide: form.doorSide,
     aisleAfterColumns: validAisleAfterColumns.value,
     showStudentNo: form.showStudentNo,
+    rotationConfig: form.rotationConfig,
     seats: sortedSeats.value.map((seat) => ({
       row: seat.row,
       column: seat.column,
@@ -400,6 +404,9 @@ async function importJson(event: Event) {
           .filter((column) => Number.isInteger(column) && column >= 0 && column < columns - 1)
       : [];
     form.showStudentNo = payload.showStudentNo !== false;
+    form.rotationConfig = payload.rotationConfig && Array.isArray(payload.rotationConfig.rules)
+      ? payload.rotationConfig
+      : { rules: [] };
     form.seats = Array.isArray(payload.seats)
       ? payload.seats
           .map((seat) => ({
@@ -439,6 +446,7 @@ async function submit() {
       doorSide: form.doorSide,
       aisleAfterColumns: validAisleAfterColumns.value,
       showStudentNo: form.showStudentNo,
+      rotationConfig: form.rotationConfig,
       seats: form.seats
     }, adminPassword.value);
     form.name = plan.name;
@@ -447,6 +455,7 @@ async function submit() {
     form.doorSide = plan.doorSide;
     form.aisleAfterColumns = plan.aisleAfterColumns ?? [];
     form.showStudentNo = plan.showStudentNo ?? true;
+    form.rotationConfig = plan.rotationConfig ?? { rules: [] };
     form.seats = plan.seats;
     message.value = "已保存";
   } catch (err) {
@@ -501,7 +510,7 @@ onMounted(() => {
           <label class="block">
             <span class="mb-3 block text-sm text-stone-400">管理密码</span>
             <input
-              v-model="adminPassword"
+              v-model="loginPassword"
               type="password"
               autocomplete="off"
               class="w-full border-0 border-b border-stone-600 bg-transparent px-0 py-3 text-lg text-white outline-none transition placeholder:text-stone-600 focus:border-white"
@@ -531,12 +540,20 @@ onMounted(() => {
           <p class="text-sm text-stone-500">SeatSheet Config</p>
           <h1 class="text-3xl font-semibold tracking-normal">座位表设置</h1>
         </div>
-        <RouterLink
-          to="/"
-          class="w-fit rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
-        >
-          返回展示页
-        </RouterLink>
+        <div class="flex gap-2">
+          <RouterLink
+            to="/rotate"
+            class="w-fit rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
+          >
+            轮换设置
+          </RouterLink>
+          <RouterLink
+            to="/"
+            class="w-fit rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
+          >
+            返回展示页
+          </RouterLink>
+        </div>
       </div>
 
       <div v-if="loading" class="mx-auto max-w-6xl rounded-lg border border-stone-200 bg-white p-5 text-stone-500">

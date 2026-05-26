@@ -17,6 +17,7 @@ await updateActivePlan({
   doorSide: "right",
   aisleAfterColumns: [1, 3],
   showStudentNo: true,
+  rotationConfig: { rules: [] },
   seats: names.map(([name, studentNo], index) => ({
     row: Math.floor(index / 5),
     column: index % 5,
