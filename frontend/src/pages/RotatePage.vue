@@ -27,6 +27,18 @@ let previewTimer: ReturnType<typeof setTimeout> | null = null;
 
 const { adminPassword, authenticated, setAdminPassword, clearAdminSession } = useAdminSession();
 
+interface PreviewUnit {
+  key: string;
+  row: number;
+  column: number;
+  columnSpan: number;
+  seats: Seat[];
+  target?: {
+    row: number;
+    column: number;
+  };
+}
+
 const form = reactive<EditableSeatPlan>({
   name: "座位表",
   rows: 5,
@@ -54,16 +66,6 @@ const previewBaseFrame = computed(() =>
   previewRuleIndex.value >= 0
     ? previewFrames.value[previewRuleIndex.value] ?? previewFrames.value[0]
     : previewFrames.value[0]
-);
-
-const previewSettledFrame = computed(() =>
-  previewRuleIndex.value >= 0
-    ? previewFrames.value[previewRuleIndex.value + 1] ?? previewBaseFrame.value
-    : previewFrames.value[0]
-);
-
-const activePreviewFrame = computed(() =>
-  previewPhase.value === "settle" ? previewSettledFrame.value : previewBaseFrame.value
 );
 
 const activePreviewLabel = computed(() => {
@@ -132,8 +134,8 @@ const previewGridTemplateColumns = computed(() => {
   return tracks.join(" ");
 });
 
-const sortedPreviewSeats = computed(() =>
-  [...(activePreviewFrame.value?.seats ?? form.seats)].sort((a, b) => a.row - b.row || a.column - b.column)
+const previewUnits = computed(() =>
+  buildPreviewUnits(previewBaseFrame.value?.seats ?? form.seats)
 );
 
 function createRuleId(prefix: string) {
@@ -379,80 +381,162 @@ function previewTranslate(fromRow: number, fromColumn: number, toRow: number, to
   return `translate(calc(${seatColumnDelta} * 8rem + ${aisleColumnDelta} * 2rem + ${gapDelta} * 0.5rem), calc(${rowDelta} * 5.5rem + ${rowDelta} * 0.5rem))`;
 }
 
-function previewTargetForSeat(seat: Seat) {
+function seatKey(row: number, column: number) {
+  return `${row}:${column}`;
+}
+
+function sortSeats(seats: Seat[]) {
+  return [...seats].sort((a, b) => a.row - b.row || a.column - b.column);
+}
+
+function seatMap(seats: Seat[]) {
+  return new Map(seats.map((seat) => [seatKey(seat.row, seat.column), seat]));
+}
+
+function createSeatUnit(seat: Seat, target?: { row: number; column: number }): PreviewUnit {
+  return {
+    key: `seat:${seat.row}:${seat.column}`,
+    row: seat.row,
+    column: seat.column,
+    columnSpan: 1,
+    seats: [seat],
+    target
+  };
+}
+
+function targetForSeatSwap(seat: Seat, rule: RotationSeatSwapRule) {
+  if (seat.row === rule.sourceRow && seat.column === rule.sourceColumn) {
+    return { row: rule.targetRow, column: rule.targetColumn };
+  }
+
+  if (seat.row === rule.targetRow && seat.column === rule.targetColumn) {
+    return { row: rule.sourceRow, column: rule.sourceColumn };
+  }
+
+  return undefined;
+}
+
+function targetForGroupSwap(seat: Seat, rule: RotationGroupSwapRule) {
+  const sourceGroup = groups.value.find((group) => group.index === rule.sourceGroupIndex);
+  const targetGroup = groups.value.find((group) => group.index === rule.targetGroupIndex);
+
+  if (!sourceGroup || !targetGroup || sourceGroup.width !== targetGroup.width) {
+    return undefined;
+  }
+
+  const sourceOffset = sourceGroup.columns.indexOf(seat.column);
+  if (sourceOffset >= 0) {
+    return { row: seat.row, column: targetGroup.columns[sourceOffset] };
+  }
+
+  const targetOffset = targetGroup.columns.indexOf(seat.column);
+  if (targetOffset >= 0) {
+    return { row: seat.row, column: sourceGroup.columns[targetOffset] };
+  }
+
+  return undefined;
+}
+
+function buildSeatPreviewUnits(seats: Seat[]) {
   const rule = currentPreviewRule.value;
+  const sortedSeats = sortSeats(seats);
 
   if (!rule) {
-    return null;
+    return sortedSeats.map((seat) => createSeatUnit(seat));
   }
 
   if (rule.type === "seatSwap") {
-    if (seat.row === rule.sourceRow && seat.column === rule.sourceColumn) {
-      return { row: rule.targetRow, column: rule.targetColumn };
-    }
-
-    if (seat.row === rule.targetRow && seat.column === rule.targetColumn) {
-      return { row: rule.sourceRow, column: rule.sourceColumn };
-    }
-
-    return null;
+    return sortedSeats.map((seat) => createSeatUnit(seat, targetForSeatSwap(seat, rule)));
   }
 
   if (rule.type === "groupSwap") {
-    const sourceGroup = groups.value.find((group) => group.index === rule.sourceGroupIndex);
-    const targetGroup = groups.value.find((group) => group.index === rule.targetGroupIndex);
-
-    if (!sourceGroup || !targetGroup || sourceGroup.width !== targetGroup.width) {
-      return null;
-    }
-
-    const sourceOffset = sourceGroup.columns.indexOf(seat.column);
-    if (sourceOffset >= 0) {
-      return { row: seat.row, column: targetGroup.columns[sourceOffset] };
-    }
-
-    const targetOffset = targetGroup.columns.indexOf(seat.column);
-    if (targetOffset >= 0) {
-      return { row: seat.row, column: sourceGroup.columns[targetOffset] };
-    }
-
-    return null;
+    return sortedSeats.map((seat) => createSeatUnit(seat, targetForGroupSwap(seat, rule)));
   }
 
+  return sortedSeats.map((seat) => createSeatUnit(seat));
+}
+
+function deskPairColumnsForGroup(group: SeatGroup) {
+  const pairs: number[][] = [];
+
+  for (let index = 0; index < group.columns.length; index += 2) {
+    pairs.push(group.columns.slice(index, index + 2));
+  }
+
+  return pairs;
+}
+
+function buildGroupCyclePreviewUnits(seats: Seat[], rule: RotationGroupCycleRule) {
   const group = groups.value.find((item) => item.index === rule.groupIndex);
 
-  if (!group || !group.columns.includes(seat.column)) {
-    return null;
+  if (!group) {
+    return buildSeatPreviewUnits(seats);
   }
 
-  const groupSeats = [...(previewBaseFrame.value?.seats ?? [])]
-    .filter((item) => group.columns.includes(item.column))
-    .sort((a, b) => a.row - b.row || a.column - b.column);
-  const currentIndex = groupSeats.findIndex((item) => item.row === seat.row && item.column === seat.column);
+  const map = seatMap(seats);
+  const units: PreviewUnit[] = [];
+  const cycleUnits: PreviewUnit[] = [];
+  const pairColumns = deskPairColumnsForGroup(group);
 
-  if (currentIndex < 0) {
-    return null;
+  for (let row = 0; row < form.rows; row += 1) {
+    pairColumns.forEach((columns) => {
+      const unitSeats = columns
+        .map((column) => map.get(seatKey(row, column)))
+        .filter((seat): seat is Seat => Boolean(seat));
+
+      if (unitSeats.length === 0) {
+        return;
+      }
+
+      const unit: PreviewUnit = {
+        key: `pair:${row}:${columns[0]}`,
+        row,
+        column: columns[0],
+        columnSpan: columns.length,
+        seats: unitSeats
+      };
+
+      cycleUnits.push(unit);
+      units.push(unit);
+    });
   }
+
+  sortSeats(seats)
+    .filter((seat) => !group.columns.includes(seat.column))
+    .forEach((seat) => units.push(createSeatUnit(seat)));
 
   const step = rule.direction === "forward" ? rule.steps : -rule.steps;
-  const target = groupSeats[cyclicIndex(groupSeats.length, currentIndex + step)];
-  return target ? { row: target.row, column: target.column } : null;
+  cycleUnits.forEach((unit, index) => {
+    const target = cycleUnits[cyclicIndex(cycleUnits.length, index + step)];
+    unit.target = { row: target.row, column: target.column };
+  });
+
+  return units.sort((left, right) => left.row - right.row || left.column - right.column);
 }
 
-function isPreviewSeatActive(seat: Seat) {
-  return Boolean(previewTargetForSeat(seat));
+function buildPreviewUnits(seats: Seat[]) {
+  const rule = currentPreviewRule.value;
+
+  if (rule?.type === "groupCycle") {
+    return buildGroupCyclePreviewUnits(seats, rule);
+  }
+
+  return buildSeatPreviewUnits(seats);
 }
 
-function previewSeatStyle(seat: Seat) {
-  const target = previewTargetForSeat(seat);
+function isPreviewUnitActive(unit: PreviewUnit) {
+  return Boolean(unit.target);
+}
+
+function previewUnitStyle(unit: PreviewUnit) {
   const transform =
-    previewPhase.value === "move" && target
-      ? `${previewTranslate(seat.row, seat.column, target.row, target.column)} scale(1.04)`
+    (previewPhase.value === "move" || previewPhase.value === "settle") && unit.target
+      ? `${previewTranslate(unit.row, unit.column, unit.target.row, unit.target.column)} scale(1.04)`
       : undefined;
 
   return {
-    gridColumn: previewSeatGridColumn(seat.column),
-    gridRow: seat.row + 1,
+    gridColumn: `${previewSeatGridColumn(unit.column)} / span ${unit.columnSpan}`,
+    gridRow: unit.row + 1,
     transform
   };
 }
@@ -521,8 +605,8 @@ function previewButtonText() {
   return "播放预览";
 }
 
-function previewPhaseClass(seat: Seat) {
-  if (!isPreviewSeatActive(seat)) {
+function previewPhaseClass(unit: PreviewUnit) {
+  if (!isPreviewUnitActive(unit)) {
     return "border-stone-200 bg-white";
   }
 
@@ -541,8 +625,8 @@ function previewPhaseClass(seat: Seat) {
   return "border-stone-200 bg-white";
 }
 
-function inactivePreviewClass(seat: Seat) {
-  if (previewPhase.value !== "move" || isPreviewSeatActive(seat)) {
+function inactivePreviewClass(unit: PreviewUnit) {
+  if (previewPhase.value !== "move" || isPreviewUnitActive(unit)) {
     return "";
   }
 
@@ -557,12 +641,16 @@ function activeSeatStudentNo(seat: Seat) {
   return seat.studentNo || "未填写学号";
 }
 
-function previewSeatClass(seat: Seat) {
+function previewUnitClass(unit: PreviewUnit) {
   return [
-    "relative h-[5.5rem] w-32 min-w-0 rounded-lg border px-3 py-2 shadow-sm transition-[transform,opacity,box-shadow,border-color,background-color] duration-700 ease-in-out will-change-transform",
-    previewPhaseClass(seat),
-    inactivePreviewClass(seat)
+    "relative min-h-[5.5rem] min-w-0 rounded-lg border bg-white p-2 shadow-sm transition-[transform,opacity,box-shadow,border-color,background-color] duration-700 ease-in-out will-change-transform",
+    previewPhaseClass(unit),
+    inactivePreviewClass(unit)
   ].join(" ");
+}
+
+function previewUnitGridClass(unit: PreviewUnit) {
+  return unit.columnSpan > 1 ? "grid h-full grid-cols-2 gap-2" : "h-full";
 }
 
 function previewSeatTitleClass() {
@@ -993,15 +1081,22 @@ onUnmounted(() => {
                 <span class="vertical-rl tracking-normal">过道</span>
               </div>
               <div
-                v-for="seat in sortedPreviewSeats"
-                :key="`${seat.row}:${seat.column}`"
-                :class="previewSeatClass(seat)"
-                :style="previewSeatStyle(seat)"
+                v-for="unit in previewUnits"
+                :key="unit.key"
+                :class="previewUnitClass(unit)"
+                :style="previewUnitStyle(unit)"
               >
-                <div :class="form.showStudentNo ? '' : 'flex h-full items-center justify-center'">
-                  <div :class="previewSeatTitleClass()">{{ activeSeatName(seat) }}</div>
-                  <div v-if="form.showStudentNo" :class="previewSeatNoClass()">
-                    {{ activeSeatStudentNo(seat) }}
+                <div :class="previewUnitGridClass(unit)">
+                  <div
+                    v-for="seat in unit.seats"
+                    :key="`${unit.key}:${seat.column}`"
+                    class="min-w-0 rounded-md px-1"
+                    :class="form.showStudentNo ? '' : 'flex h-full items-center justify-center'"
+                  >
+                    <div :class="previewSeatTitleClass()">{{ activeSeatName(seat) }}</div>
+                    <div v-if="form.showStudentNo" :class="previewSeatNoClass()">
+                      {{ activeSeatStudentNo(seat) }}
+                    </div>
                   </div>
                 </div>
               </div>
