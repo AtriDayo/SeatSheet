@@ -144,19 +144,15 @@ const movingPreviewUnits = computed(() =>
   buildPreviewUnits(previewBaseFrame.value?.seats ?? form.seats)
 );
 
-const settledPreviewUnits = computed(() =>
-  buildSettledPreviewUnits(previewSettledFrame.value?.seats ?? form.seats)
-);
-
 const activePreviewUnitKeys = computed(() =>
-  previewPhase.value === "final"
+  previewPhase.value === "idle" || previewPhase.value === "final"
     ? new Set<string>()
     : new Set(movingPreviewUnits.value.filter((unit) => unit.target).map((unit) => unit.key))
 );
 
 const previewUnits = computed(() =>
-  previewPhase.value === "move" || previewPhase.value === "settle" || previewPhase.value === "final"
-    ? settledPreviewUnits.value
+  previewPhase.value === "final"
+    ? buildSettledPreviewUnits(previewSettledFrame.value?.seats ?? form.seats)
     : movingPreviewUnits.value
 );
 
@@ -560,9 +556,14 @@ function isPreviewUnitActive(unit: PreviewUnit) {
 }
 
 function previewUnitStyle(unit: PreviewUnit) {
+  const position =
+    (previewPhase.value === "move" || previewPhase.value === "settle") && unit.target
+      ? unit.target
+      : unit;
+
   return {
-    gridColumn: `${previewSeatGridColumn(unit.column)} / span ${unit.columnSpan}`,
-    gridRow: unit.row + 1
+    gridColumn: `${previewSeatGridColumn(position.column)} / span ${unit.columnSpan}`,
+    gridRow: position.row + 1
   };
 }
 
@@ -601,10 +602,10 @@ function runPreviewRule(index: number) {
 
         previewTimer = setTimeout(() => {
           runPreviewRule(index + 1);
-        }, 220);
-      }, 420);
-    }, 820);
-  }, 520);
+        }, 260);
+      }, 620);
+    }, 980);
+  }, 640);
 }
 
 function resetPreview() {
@@ -648,7 +649,7 @@ function previewPhaseClass(unit: PreviewUnit) {
   }
 
   if (previewPhase.value === "settle") {
-    return "border-emerald-300 bg-emerald-50 shadow-md";
+    return "z-20 scale-[1.01] border-emerald-300 bg-emerald-50 shadow-md ring-1 ring-emerald-200";
   }
 
   return "border-stone-200 bg-white";
@@ -672,7 +673,7 @@ function activeSeatStudentNo(seat: Seat) {
 
 function previewUnitClass(unit: PreviewUnit) {
   return [
-    "relative min-h-[5.5rem] min-w-0 rounded-lg border bg-white p-2 shadow-sm transition-[transform,opacity,box-shadow,border-color,background-color] duration-700 ease-in-out will-change-transform",
+    "relative min-h-[5.5rem] min-w-0 rounded-lg border bg-white p-2 shadow-sm transition-[transform,opacity,box-shadow,border-color,background-color] duration-[900ms] ease-in-out will-change-transform",
     previewPhaseClass(unit),
     inactivePreviewClass(unit)
   ].join(" ");
@@ -1183,12 +1184,12 @@ onUnmounted(() => {
 
 <style scoped>
 .preview-unit-move {
-  transition: transform 780ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 940ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .preview-unit-enter-active,
 .preview-unit-leave-active {
-  transition: opacity 220ms ease, transform 220ms ease;
+  transition: opacity 260ms ease, transform 260ms ease;
 }
 
 .preview-unit-enter-from,
