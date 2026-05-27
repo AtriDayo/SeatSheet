@@ -63,6 +63,12 @@ The default production compose file uses:
 - `atridayo/seatsheet-backend:latest`
 - `atridayo/seatsheet-frontend:latest`
 
+Docker image tags are split by branch:
+
+- `main` publishes the default `latest` tag.
+- `stable` publishes the `stable` tag.
+- Both branches also publish commit-SHA tags.
+
 ## Local Setup
 
 1. Install dependencies:

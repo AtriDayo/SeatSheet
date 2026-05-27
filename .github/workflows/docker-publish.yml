@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - stable
   workflow_dispatch:
 
 env:
@@ -28,6 +29,23 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Resolve image tag
+        id: image-tag
+        shell: bash
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            main)
+              echo "tag=latest" >> "$GITHUB_OUTPUT"
+              ;;
+            stable)
+              echo "tag=stable" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Docker images are only published from main or stable."
+              exit 1
+              ;;
+          esac
+
       - name: Build and push backend
         uses: docker/build-push-action@v6
         with:
@@ -35,7 +53,7 @@ jobs:
           file: backend/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE }}:${{ steps.image-tag.outputs.tag }}
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
@@ -49,7 +67,7 @@ jobs:
           build-args: |
             VITE_API_BASE_URL=
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FRONTEND_IMAGE }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FRONTEND_IMAGE }}:${{ steps.image-tag.outputs.tag }}
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend

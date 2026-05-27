@@ -11,6 +11,12 @@ The default production compose file uses these published images:
 - `atridayo/seatsheet-backend:latest`
 - `atridayo/seatsheet-frontend:latest`
 
+Docker tags are published by branch:
+
+- `main` publishes `atridayo/seatsheet-backend:latest` and `atridayo/seatsheet-frontend:latest`.
+- `stable` publishes `atridayo/seatsheet-backend:stable` and `atridayo/seatsheet-frontend:stable`.
+- Both branches also publish commit-SHA tags for explicit rollback or pinning.
+
 ### First VPS Install
 
 Install Docker on the VPS, then run:
@@ -29,7 +35,7 @@ docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml exe
 Edit `deploy/.env.prod` before the first `up`:
 
 - `DOCKER_IMAGE_NAMESPACE`: keep `atridayo` unless you publish your own image fork.
-- `SEATSHEET_IMAGE_TAG`: use `latest` unless you want a specific commit SHA tag.
+- `SEATSHEET_IMAGE_TAG`: use `latest` for main-branch images, `stable` for stable-branch images, or a specific commit SHA tag.
 - `FRONTEND_PORT`: defaults to `8080`.
 - `POSTGRES_PASSWORD`: choose a strong password before the database volume is initialized.
 - `ADMIN_PASSWORD`: required for entering `/config` and saving changes.
