@@ -475,7 +475,11 @@ watch(
 );
 
 onMounted(() => {
-  loading.value = false;
+  if (authenticated.value) {
+    loadPlan();
+  } else {
+    loading.value = false;
+  }
 });
 </script>
 
