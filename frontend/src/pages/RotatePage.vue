@@ -22,7 +22,7 @@ const message = ref("");
 const error = ref("");
 const playingPreview = ref(false);
 const previewRuleIndex = ref(-1);
-const previewPhase = ref<"idle" | "highlight" | "move" | "settle">("idle");
+const previewPhase = ref<"idle" | "highlight" | "move" | "settle" | "final">("idle");
 let previewTimer: ReturnType<typeof setTimeout> | null = null;
 
 const { adminPassword, authenticated, setAdminPassword, clearAdminSession } = useAdminSession();
@@ -140,10 +140,24 @@ const previewGridTemplateColumns = computed(() => {
   return tracks.join(" ");
 });
 
+const movingPreviewUnits = computed(() =>
+  buildPreviewUnits(previewBaseFrame.value?.seats ?? form.seats)
+);
+
+const settledPreviewUnits = computed(() =>
+  buildSettledPreviewUnits(previewSettledFrame.value?.seats ?? form.seats)
+);
+
+const activePreviewUnitKeys = computed(() =>
+  previewPhase.value === "final"
+    ? new Set<string>()
+    : new Set(movingPreviewUnits.value.filter((unit) => unit.target).map((unit) => unit.key))
+);
+
 const previewUnits = computed(() =>
-  previewPhase.value === "settle"
-    ? buildSettledPreviewUnits(previewSettledFrame.value?.seats ?? form.seats)
-    : buildPreviewUnits(previewBaseFrame.value?.seats ?? form.seats)
+  previewPhase.value === "move" || previewPhase.value === "settle" || previewPhase.value === "final"
+    ? settledPreviewUnits.value
+    : movingPreviewUnits.value
 );
 
 function createRuleId(prefix: string) {
@@ -367,28 +381,6 @@ function cyclicIndex(length: number, current: number) {
   return ((current % length) + length) % length;
 }
 
-function previewPositionTerms(row: number, column: number) {
-  const aisleCount = validPreviewAisleAfterColumns.value.filter((aisleColumn) => aisleColumn < column).length;
-
-  return {
-    row,
-    seatColumns: column,
-    aisleColumns: aisleCount,
-    gaps: column + aisleCount
-  };
-}
-
-function previewTranslate(fromRow: number, fromColumn: number, toRow: number, toColumn: number) {
-  const from = previewPositionTerms(fromRow, fromColumn);
-  const to = previewPositionTerms(toRow, toColumn);
-  const rowDelta = to.row - from.row;
-  const seatColumnDelta = to.seatColumns - from.seatColumns;
-  const aisleColumnDelta = to.aisleColumns - from.aisleColumns;
-  const gapDelta = to.gaps - from.gaps;
-
-  return `translate(calc(${seatColumnDelta} * 8rem + ${aisleColumnDelta} * 2rem + ${gapDelta} * 0.5rem), calc(${rowDelta} * 5.5rem + ${rowDelta} * 0.5rem))`;
-}
-
 function seatKey(row: number, column: number) {
   return `${row}:${column}`;
 }
@@ -564,19 +556,13 @@ function buildPreviewUnits(seats: Seat[]) {
 }
 
 function isPreviewUnitActive(unit: PreviewUnit) {
-  return Boolean(unit.target);
+  return activePreviewUnitKeys.value.has(unit.key);
 }
 
 function previewUnitStyle(unit: PreviewUnit) {
-  const transform =
-    previewPhase.value === "move" && unit.target
-      ? `${previewTranslate(unit.row, unit.column, unit.target.row, unit.target.column)} scale(1.04)`
-      : undefined;
-
   return {
     gridColumn: `${previewSeatGridColumn(unit.column)} / span ${unit.columnSpan}`,
-    gridRow: unit.row + 1,
-    transform
+    gridRow: unit.row + 1
   };
 }
 
@@ -595,7 +581,7 @@ function playPreview() {
 function runPreviewRule(index: number) {
   if (index >= form.rotationConfig.rules.length) {
     previewRuleIndex.value = Math.max(form.rotationConfig.rules.length - 1, -1);
-    previewPhase.value = form.rotationConfig.rules.length > 0 ? "settle" : "idle";
+    previewPhase.value = form.rotationConfig.rules.length > 0 ? "final" : "idle";
     playingPreview.value = false;
     previewTimer = null;
     return;
@@ -611,8 +597,12 @@ function runPreviewRule(index: number) {
       previewPhase.value = "settle";
 
       previewTimer = setTimeout(() => {
-        runPreviewRule(index + 1);
-      }, 360);
+        previewPhase.value = "final";
+
+        previewTimer = setTimeout(() => {
+          runPreviewRule(index + 1);
+        }, 220);
+      }, 420);
     }, 820);
   }, 520);
 }
@@ -715,6 +705,10 @@ function previewStatusText() {
 
   if (previewPhase.value === "move") {
     return "正在移动";
+  }
+
+  if (previewPhase.value === "settle") {
+    return "正在淡出高亮";
   }
 
   return "已到达目标位置";
@@ -1110,7 +1104,12 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div class="grid gap-2" :style="{ gridTemplateColumns: previewGridTemplateColumns }">
+            <TransitionGroup
+              class="grid gap-2"
+              name="preview-unit"
+              tag="div"
+              :style="{ gridTemplateColumns: previewGridTemplateColumns }"
+            >
               <div
                 v-for="column in validPreviewAisleAfterColumns"
                 :key="`preview-aisle:${column}`"
@@ -1139,7 +1138,7 @@ onUnmounted(() => {
                   </div>
                 </div>
               </div>
-            </div>
+            </TransitionGroup>
 
             <div v-if="form.doorSide === 'right'" class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1">
               <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
@@ -1181,3 +1180,20 @@ onUnmounted(() => {
     </section>
   </main>
 </template>
+
+<style scoped>
+.preview-unit-move {
+  transition: transform 780ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.preview-unit-enter-active,
+.preview-unit-leave-active {
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+
+.preview-unit-enter-from,
+.preview-unit-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+</style>
