@@ -29,7 +29,7 @@ onMounted(loadPlan);
 <template>
   <main class="display-page">
     <header class="display-header">
-      <div class="display-brand"><span class="admin-header__mark" aria-hidden="true">S</span><strong>SeatSheet</strong></div>
+      <div class="display-brand"><strong>SeatSheet</strong></div>
       <div class="display-header__actions">
         <button type="button" title="刷新座位表" aria-label="刷新座位表" @click="loadPlan"><RefreshCw :size="18" /></button>
         <RouterLink to="/config"><Settings2 :size="17" />管理座位</RouterLink>

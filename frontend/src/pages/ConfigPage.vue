@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
-import { Download, GripVertical, Save, Upload } from "@lucide/vue";
+import { ArrowRight, Download, GripVertical, Save, Upload } from "@lucide/vue";
 import AdminHeader from "../components/AdminHeader.vue";
 import AdminLogin from "../components/AdminLogin.vue";
 import { fetchSeatPlan, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
@@ -508,10 +508,15 @@ onMounted(() => {
     :busy="authenticating" :error="error" @submit="authenticate" />
 
   <main v-else class="admin-page">
-    <AdminHeader active="config" :name="form.name" :dirty="isDirty" @logout="leaveAdmin" />
+    <AdminHeader :name="form.name" :dirty="isDirty" @logout="leaveAdmin" />
     <div class="workspace-title">
       <div>
-        <h1>座位编辑</h1>
+        <div class="workspace-title__heading">
+          <h1>座位编辑</h1>
+          <RouterLink class="workspace-title__link" to="/rotate">
+            轮换规则 <ArrowRight :size="15" aria-hidden="true" />
+          </RouterLink>
+        </div>
         <p>管理班级布局与座位名单</p>
       </div>
       <span class="workspace-title__meta">{{ form.rows }} 排 · {{ form.columns }} 列 · {{ form.seats.length }} 座</span>

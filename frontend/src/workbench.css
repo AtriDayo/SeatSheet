@@ -25,29 +25,17 @@
   border-bottom: 1px solid #30434a;
 }
 .admin-header__brand,
-.admin-header__nav,
 .admin-header__actions {
   display: flex;
   align-items: center;
 }
 .admin-header__brand {
-  gap: 11px;
-  min-width: 210px;
-}
-.admin-header__mark {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 6px;
-  background: #62d3bd;
-  color: #112d2d;
-  font-size: 18px;
-  font-weight: 800;
+  min-width: 0;
 }
 .admin-header__identity {
   display: grid;
   gap: 3px;
+  min-width: 0;
   line-height: 1.15;
 }
 .admin-header__identity strong {
@@ -60,27 +48,6 @@
   white-space: nowrap;
   color: #a9bdbd;
   font-size: 11px;
-}
-.admin-header__nav {
-  align-self: stretch;
-  gap: 4px;
-}
-.admin-header__nav a {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 14px;
-  border-bottom: 3px solid transparent;
-  color: #b5c8c8;
-  font-size: 14px;
-  white-space: nowrap;
-}
-.admin-header__nav a:hover {
-  color: #fff;
-}
-.admin-header__nav a.is-active {
-  border-color: #62d3bd;
-  color: #fff;
 }
 .admin-header__actions {
   margin-left: auto;
@@ -118,14 +85,35 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   padding: 27px 32px 20px;
+}
+.workspace-title__heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 22px;
 }
 .workspace-title h1 {
   margin: 0;
   font-size: 24px;
   font-weight: 700;
   line-height: 1.3;
+}
+.workspace-title__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #08796f;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.workspace-title__link:hover {
+  color: #075b55;
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 .workspace-title p {
   margin-top: 5px;
@@ -500,22 +488,11 @@
 }
 @media (max-width: 640px) {
   .admin-header {
-    flex-wrap: wrap;
-    gap: 0;
-    padding: 8px 14px 0;
+    gap: 12px;
+    padding: 8px 14px;
   }
   .admin-header__brand {
-    min-width: 0;
     flex: 1;
-  }
-  .admin-header__nav {
-    order: 3;
-    width: 100%;
-    height: 42px;
-  }
-  .admin-header__nav a {
-    flex: 1;
-    justify-content: center;
   }
   .admin-header__actions {
     margin-left: 0;

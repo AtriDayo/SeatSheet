@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
-import { ChevronDown, ChevronUp, Play, Plus, Repeat2, RotateCcw, Save, Trash2 } from "@lucide/vue";
+import { ArrowLeft, ChevronDown, ChevronUp, Play, Plus, Repeat2, RotateCcw, Save, Trash2 } from "@lucide/vue";
 import AdminHeader from "../components/AdminHeader.vue";
 import AdminLogin from "../components/AdminLogin.vue";
 import { fetchSeatPlan, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
@@ -72,6 +72,18 @@ const previewFrames = computed(() =>
   buildRotationFrames(form.seats, groups.value, form.rotationConfig)
 );
 
+const previewIdentityFrames = computed(() =>
+  buildRotationFrames(
+    form.seats.map((seat) => ({
+      ...seat,
+      name: seatKey(seat.row, seat.column),
+      studentNo: null
+    })),
+    groups.value,
+    form.rotationConfig
+  )
+);
+
 const currentPreviewRule = computed(() =>
   previewRuleIndex.value >= 0
     ? form.rotationConfig.rules[previewRuleIndex.value] ?? null
@@ -88,6 +100,14 @@ const previewSettledFrame = computed(() =>
   previewRuleIndex.value >= 0
     ? previewFrames.value[previewRuleIndex.value + 1] ?? previewBaseFrame.value
     : previewFrames.value[0]
+);
+
+const previewBaseIdentities = computed(() =>
+  previewIdentityFrames.value[Math.max(previewRuleIndex.value, 0)]?.seats ?? []
+);
+
+const previewSettledIdentities = computed(() =>
+  previewIdentityFrames.value[Math.max(previewRuleIndex.value + 1, 0)]?.seats ?? []
 );
 
 const activePreviewLabel = computed(() => {
@@ -157,7 +177,7 @@ const previewGridTemplateColumns = computed(() => {
 });
 
 const movingPreviewUnits = computed(() =>
-  buildPreviewUnits(previewBaseFrame.value?.seats ?? form.seats)
+  buildPreviewUnits(previewBaseFrame.value?.seats ?? form.seats, previewBaseIdentities.value)
 );
 
 const activePreviewUnitKeys = computed(() =>
@@ -168,7 +188,7 @@ const activePreviewUnitKeys = computed(() =>
 
 const previewUnits = computed(() =>
   previewPhase.value === "final"
-    ? buildSettledPreviewUnits(previewSettledFrame.value?.seats ?? form.seats)
+    ? buildSettledPreviewUnits(previewSettledFrame.value?.seats ?? form.seats, previewSettledIdentities.value)
     : movingPreviewUnits.value
 );
 
@@ -412,17 +432,13 @@ function seatMap(seats: Seat[]) {
   return new Map(seats.map((seat) => [seatKey(seat.row, seat.column), seat]));
 }
 
-function seatPayloadKey(seat: Seat) {
-  if (seat.name || seat.studentNo) {
-    return `${seat.name ?? ""}:${seat.studentNo ?? ""}`;
-  }
-
-  return `empty:${seat.row}:${seat.column}`;
+function previewIdentity(identityMap: Map<string, Seat>, seat: Seat) {
+  return identityMap.get(seatKey(seat.row, seat.column))?.name ?? seatKey(seat.row, seat.column);
 }
 
-function createSeatUnit(seat: Seat, target?: { row: number; column: number }): PreviewUnit {
+function createSeatUnit(seat: Seat, identity: string, target?: { row: number; column: number }): PreviewUnit {
   return {
-    key: `seat:${seatPayloadKey(seat)}`,
+    key: `seat:${identity}`,
     row: seat.row,
     column: seat.column,
     columnSpan: 1,
@@ -431,21 +447,22 @@ function createSeatUnit(seat: Seat, target?: { row: number; column: number }): P
   };
 }
 
-function buildStaticPreviewUnits(seats: Seat[]) {
-  return sortSeats(seats).map((seat) => createSeatUnit(seat));
+function buildStaticPreviewUnits(seats: Seat[], identities: Seat[]) {
+  const identityMap = seatMap(identities);
+  return sortSeats(seats).map((seat) => createSeatUnit(seat, previewIdentity(identityMap, seat)));
 }
 
-function buildSettledPreviewUnits(seats: Seat[]) {
+function buildSettledPreviewUnits(seats: Seat[], identities: Seat[]) {
   const rule = currentPreviewRule.value;
 
   if (rule?.type === "groupCycle") {
-    return buildGroupCyclePreviewUnits(seats, rule).map((unit) => ({
+    return buildGroupCyclePreviewUnits(seats, identities, rule).map((unit) => ({
       ...unit,
       target: undefined
     }));
   }
 
-  return buildStaticPreviewUnits(seats);
+  return buildStaticPreviewUnits(seats, identities);
 }
 
 function targetForSeatSwap(seat: Seat, rule: RotationSeatSwapRule) {
@@ -481,23 +498,26 @@ function targetForGroupSwap(seat: Seat, rule: RotationGroupSwapRule) {
   return undefined;
 }
 
-function buildSeatPreviewUnits(seats: Seat[]) {
+function buildSeatPreviewUnits(seats: Seat[], identities: Seat[]) {
   const rule = currentPreviewRule.value;
   const sortedSeats = sortSeats(seats);
+  const identityMap = seatMap(identities);
+  const unitFor = (seat: Seat, target?: { row: number; column: number }) =>
+    createSeatUnit(seat, previewIdentity(identityMap, seat), target);
 
   if (!rule) {
-    return sortedSeats.map((seat) => createSeatUnit(seat));
+    return sortedSeats.map((seat) => unitFor(seat));
   }
 
   if (rule.type === "seatSwap") {
-    return sortedSeats.map((seat) => createSeatUnit(seat, targetForSeatSwap(seat, rule)));
+    return sortedSeats.map((seat) => unitFor(seat, targetForSeatSwap(seat, rule)));
   }
 
   if (rule.type === "groupSwap") {
-    return sortedSeats.map((seat) => createSeatUnit(seat, targetForGroupSwap(seat, rule)));
+    return sortedSeats.map((seat) => unitFor(seat, targetForGroupSwap(seat, rule)));
   }
 
-  return sortedSeats.map((seat) => createSeatUnit(seat));
+  return sortedSeats.map((seat) => unitFor(seat));
 }
 
 function deskPairColumnsForGroup(group: SeatGroup) {
@@ -514,14 +534,15 @@ function deskPairColumnsForGroup(group: SeatGroup) {
   return pairs;
 }
 
-function buildGroupCyclePreviewUnits(seats: Seat[], rule: RotationGroupCycleRule) {
+function buildGroupCyclePreviewUnits(seats: Seat[], identities: Seat[], rule: RotationGroupCycleRule) {
   const group = groups.value.find((item) => item.index === rule.groupIndex);
 
   if (!group) {
-    return buildSeatPreviewUnits(seats);
+    return buildSeatPreviewUnits(seats, identities);
   }
 
   const map = seatMap(seats);
+  const identityMap = seatMap(identities);
   const units: PreviewUnit[] = [];
   const cycleUnits: PreviewUnit[] = [];
   const pairColumns = deskPairColumnsForGroup(group);
@@ -537,7 +558,7 @@ function buildGroupCyclePreviewUnits(seats: Seat[], rule: RotationGroupCycleRule
       }
 
       const unit: PreviewUnit = {
-        key: `pair:${unitSeats.map(seatPayloadKey).join("|")}`,
+        key: `pair:${unitSeats.map((seat) => previewIdentity(identityMap, seat)).join("|")}`,
         row,
         column: columns[0],
         columnSpan: columns.length,
@@ -553,7 +574,7 @@ function buildGroupCyclePreviewUnits(seats: Seat[], rule: RotationGroupCycleRule
 
   sortSeats(seats)
     .filter((seat) => !movingColumns.has(seat.column))
-    .forEach((seat) => units.push(createSeatUnit(seat)));
+    .forEach((seat) => units.push(createSeatUnit(seat, previewIdentity(identityMap, seat))));
 
   const step = rule.direction === "forward" ? rule.steps : -rule.steps;
   cycleUnits.forEach((unit, index) => {
@@ -564,14 +585,14 @@ function buildGroupCyclePreviewUnits(seats: Seat[], rule: RotationGroupCycleRule
   return units.sort((left, right) => left.row - right.row || left.column - right.column);
 }
 
-function buildPreviewUnits(seats: Seat[]) {
+function buildPreviewUnits(seats: Seat[], identities: Seat[]) {
   const rule = currentPreviewRule.value;
 
   if (rule?.type === "groupCycle") {
-    return buildGroupCyclePreviewUnits(seats, rule);
+    return buildGroupCyclePreviewUnits(seats, identities, rule);
   }
 
-  return buildSeatPreviewUnits(seats);
+  return buildSeatPreviewUnits(seats, identities);
 }
 
 function isPreviewUnitActive(unit: PreviewUnit) {
@@ -625,8 +646,8 @@ function runPreviewRule(index: number) {
 
         previewTimer = setTimeout(() => {
           runPreviewRule(index + 1);
-        }, 260);
-      }, 620);
+        }, 220);
+      }, 940);
     }, 980);
   }, 640);
 }
@@ -669,10 +690,6 @@ function previewPhaseClass(unit: PreviewUnit) {
 
   if (previewPhase.value === "move") {
     return "z-30 scale-[1.04] border-stone-950 bg-white shadow-2xl ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100";
-  }
-
-  if (previewPhase.value === "settle") {
-    return "z-20 scale-[1.01] border-emerald-300 bg-emerald-50 shadow-md ring-1 ring-emerald-200";
   }
 
   return "border-stone-200 bg-white";
@@ -816,10 +833,15 @@ onUnmounted(() => {
     :busy="authenticating" :error="error" @submit="authenticate" />
 
   <main v-else class="admin-page">
-    <AdminHeader active="rotate" :name="form.name" :dirty="isDirty" @logout="leaveAdmin" />
+    <AdminHeader :name="form.name" :dirty="isDirty" @logout="leaveAdmin" />
     <div class="workspace-title">
       <div>
-        <h1>轮换规则</h1>
+        <div class="workspace-title__heading">
+          <h1>轮换规则</h1>
+          <RouterLink class="workspace-title__link" to="/config">
+            <ArrowLeft :size="15" aria-hidden="true" /> 座位编辑
+          </RouterLink>
+        </div>
         <p>按顺序设置规则，随时查看座位变化</p>
       </div>
       <span class="workspace-title__meta">{{ form.rotationConfig.rules.length }} 条规则</span>
@@ -925,10 +947,10 @@ onUnmounted(() => {
                 :style="{ gridColumn: previewAisleGridColumn(column), gridRow: `1 / span ${form.rows}` }"><span>过道</span></div>
               <div v-for="unit in previewUnits" :key="unit.key" :class="previewUnitClass(unit)" :style="previewUnitStyle(unit)">
                 <div :class="previewUnitGridClass(unit)">
-                  <div v-for="seat in unit.seats" :key="`${unit.key}:${seat.column}`" class="min-w-0 rounded-md px-1"
+                  <div v-for="(seat, seatIndex) in unit.seats" :key="`${unit.key}:${seatIndex}`" class="min-w-0 rounded-md px-1"
                     :class="form.showStudentNo ? '' : 'flex h-full items-center justify-center'">
                     <div :class="previewSeatTitleClass()">{{ activeSeatName(seat) }}</div>
-                    <div v-if="form.showStudentNo" :class="previewSeatNoClass()">{{ activeSeatStudentNo(seat) }}</div>
+                    <div v-if="form.showStudentNo && (seat.name || seat.studentNo)" :class="previewSeatNoClass()">{{ activeSeatStudentNo(seat) }}</div>
                   </div>
                 </div>
               </div>
@@ -951,16 +973,5 @@ onUnmounted(() => {
 <style scoped>
 .preview-unit-move {
   transition: transform 940ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.preview-unit-enter-active,
-.preview-unit-leave-active {
-  transition: opacity 260ms ease, transform 260ms ease;
-}
-
-.preview-unit-enter-from,
-.preview-unit-leave-to {
-  opacity: 0;
-  transform: scale(0.98);
 }
 </style>
