@@ -295,7 +295,7 @@ function addGroupSwapRule() {
     sourceGroupIndex: sourceGroup.index,
     targetGroupIndex: targetGroup.index
   } satisfies RotationGroupSwapRule);
-  selectedRuleId.value = form.rotationConfig.rules.at(-1)?.id ?? null;
+  selectedRuleId.value = form.rotationConfig.rules[form.rotationConfig.rules.length - 1]?.id ?? null;
 }
 
 function addGroupCycleRule() {
@@ -313,7 +313,7 @@ function addGroupCycleRule() {
     direction: "forward",
     steps: 1
   } satisfies RotationGroupCycleRule);
-  selectedRuleId.value = form.rotationConfig.rules.at(-1)?.id ?? null;
+  selectedRuleId.value = form.rotationConfig.rules[form.rotationConfig.rules.length - 1]?.id ?? null;
 }
 
 function addSeatSwapRule() {
@@ -333,7 +333,7 @@ function addSeatSwapRule() {
     targetRow: target.row,
     targetColumn: target.column
   } satisfies RotationSeatSwapRule);
-  selectedRuleId.value = form.rotationConfig.rules.at(-1)?.id ?? null;
+  selectedRuleId.value = form.rotationConfig.rules[form.rotationConfig.rules.length - 1]?.id ?? null;
 }
 
 function removeRule(id: string) {
