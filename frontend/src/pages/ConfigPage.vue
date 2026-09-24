@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { onBeforeRouteLeave } from "vue-router";
+import { Download, GripVertical, Save, Upload } from "@lucide/vue";
+import AdminHeader from "../components/AdminHeader.vue";
+import AdminLogin from "../components/AdminLogin.vue";
 import { fetchSeatPlan, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
 import type { EditableSeatPlan, Seat } from "../types/seat";
 import { useAdminSession } from "../state/adminSession";
@@ -27,6 +31,15 @@ const form = reactive<EditableSeatPlan>({
   rotationConfig: { rules: [] },
   seats: []
 });
+
+const savedSnapshot = ref("");
+function planSnapshot() {
+  return JSON.stringify({ name: form.name, rows: form.rows, columns: form.columns,
+    doorSide: form.doorSide, aisleAfterColumns: [...form.aisleAfterColumns].sort((a, b) => a - b),
+    showStudentNo: form.showStudentNo, rotationConfig: form.rotationConfig,
+    seats: form.seats.map(({ row, column, name, studentNo }) => ({ row, column, name, studentNo })) });
+}
+const isDirty = computed(() => savedSnapshot.value !== "" && planSnapshot() !== savedSnapshot.value);
 
 const sortedSeats = computed(() =>
   [...form.seats].sort((a, b) => a.row - b.row || a.column - b.column)
@@ -149,6 +162,8 @@ async function loadPlan() {
       studentNo: seat.studentNo
     }));
     normalizeSeats();
+    await nextTick();
+    savedSnapshot.value = planSnapshot();
   } catch (err) {
     error.value = err instanceof Error ? err.message : "加载失败";
   } finally {
@@ -173,6 +188,7 @@ async function authenticate() {
 }
 
 function leaveAdmin() {
+  if (isDirty.value && !window.confirm("有尚未保存的座位修改，确定退出管理吗？")) return;
   clearAdminSession();
   loginPassword.value = "";
   form.seats = [];
@@ -457,6 +473,8 @@ async function submit() {
     form.showStudentNo = plan.showStudentNo ?? true;
     form.rotationConfig = plan.rotationConfig ?? { rules: [] };
     form.seats = plan.seats;
+    await nextTick();
+    savedSnapshot.value = planSnapshot();
     message.value = "已保存";
   } catch (err) {
     error.value = err instanceof Error ? err.message : "保存失败";
@@ -474,6 +492,8 @@ watch(
   }
 );
 
+onBeforeRouteLeave(() => !isDirty.value || window.confirm("有尚未保存的座位修改，确定离开吗？"));
+
 onMounted(() => {
   if (authenticated.value) {
     loadPlan();
@@ -484,314 +504,133 @@ onMounted(() => {
 </script>
 
 <template>
-  <main
-    v-if="!authenticated"
-    class="min-h-screen bg-stone-950 px-5 py-8 text-white"
-  >
-    <section class="mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl flex-col justify-between">
-      <div class="flex items-center justify-between">
-        <p class="text-sm text-stone-400">SeatSheet Config</p>
-        <RouterLink
-          to="/"
-          class="rounded-lg border border-stone-700 px-3 py-2 text-sm text-stone-300 transition hover:border-white hover:text-white"
-        >
-          返回展示页
-        </RouterLink>
+  <AdminLogin v-if="!authenticated" v-model:password="loginPassword" section="座位编辑"
+    :busy="authenticating" :error="error" @submit="authenticate" />
+
+  <main v-else class="admin-page">
+    <AdminHeader active="config" :name="form.name" :dirty="isDirty" @logout="leaveAdmin" />
+    <div class="workspace-title">
+      <div>
+        <h1>座位编辑</h1>
+        <p>管理班级布局与座位名单</p>
       </div>
+      <span class="workspace-title__meta">{{ form.rows }} 排 · {{ form.columns }} 列 · {{ form.seats.length }} 座</span>
+    </div>
 
-      <form class="grid gap-10 md:grid-cols-[1fr_minmax(18rem,26rem)] md:items-end" @submit.prevent="authenticate">
-        <div>
-          <p class="mb-4 text-sm text-stone-400">管理入口</p>
-          <h1 class="max-w-3xl text-4xl font-semibold tracking-normal sm:text-5xl">
-            输入管理密码后才能修改座位表。
-          </h1>
-          <p class="mt-5 max-w-2xl text-base leading-7 text-stone-400">
-            密码只会在当前页面内存中使用，不写入 Cookie 或浏览器存储。刷新页面、重新打开页面或退出管理后都需要再次输入。
-          </p>
-        </div>
-
-        <div>
-          <label class="block">
-            <span class="mb-3 block text-sm text-stone-400">管理密码</span>
-            <input
-              v-model="loginPassword"
-              type="password"
-              autocomplete="off"
-              class="w-full border-0 border-b border-stone-600 bg-transparent px-0 py-3 text-lg text-white outline-none transition placeholder:text-stone-600 focus:border-white"
-              placeholder="输入密码"
-              required
-            />
+    <div v-if="loading" class="workspace-loading">正在加载座位表…</div>
+    <form v-else class="workspace workspace--config" @submit.prevent="submit">
+      <aside class="workspace-sidebar">
+        <section class="workspace-section">
+          <h2>基本信息</h2>
+          <label class="workspace-field">
+            <span>座位表名称</span>
+            <input v-model="form.name" class="workspace-input" maxlength="80" required />
           </label>
-          <button
-            class="mt-6 w-full rounded-lg bg-white px-4 py-3 text-stone-950 transition hover:bg-stone-200 disabled:cursor-not-allowed disabled:bg-stone-600 disabled:text-stone-300"
-            type="submit"
-            :disabled="authenticating"
-          >
-            {{ authenticating ? "验证中" : "进入管理" }}
-          </button>
-          <p v-if="error" class="mt-3 text-sm text-red-300">{{ error }}</p>
-        </div>
-      </form>
+          <div class="workspace-field-row">
+            <label class="workspace-field">
+              <span>排数</span>
+              <input v-model.number="form.rows" class="workspace-input" type="number" min="1" max="30" />
+            </label>
+            <label class="workspace-field">
+              <span>列数</span>
+              <input v-model.number="form.columns" class="workspace-input" type="number" min="1" max="30" />
+            </label>
+          </div>
+        </section>
 
-      <p class="text-sm text-stone-500">SeatSheet 不会在本机保存管理凭据。</p>
-    </section>
-  </main>
-
-  <main v-else class="min-h-screen bg-stone-100 px-5 py-6 text-stone-950">
-    <section class="mx-auto w-full">
-      <div class="mx-auto mb-6 flex max-w-6xl flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p class="text-sm text-stone-500">SeatSheet Config</p>
-          <h1 class="text-3xl font-semibold tracking-normal">座位表设置</h1>
-        </div>
-        <div class="flex gap-2">
-          <RouterLink
-            to="/rotate"
-            class="w-fit rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
-          >
-            轮换设置
-          </RouterLink>
-          <RouterLink
-            to="/"
-            class="w-fit rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
-          >
-            返回展示页
-          </RouterLink>
-        </div>
-      </div>
-
-      <div v-if="loading" class="mx-auto max-w-6xl rounded-lg border border-stone-200 bg-white p-5 text-stone-500">
-        正在加载设置
-      </div>
-
-      <form v-else class="space-y-6" @submit.prevent="submit">
-        <div class="mx-auto flex max-w-6xl justify-end">
-          <button
-            class="rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
-            type="button"
-            @click="leaveAdmin"
-          >
-            退出管理
-          </button>
-        </div>
-
-        <div class="mx-auto grid max-w-6xl gap-4 md:grid-cols-6">
-          <label class="block">
-            <span class="mb-2 block text-sm text-stone-500">名称</span>
-            <input
-              v-model="form.name"
-              class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
-              maxlength="80"
-              required
-            />
-          </label>
-          <label class="block">
-            <span class="mb-2 block text-sm text-stone-500">纵向座位数</span>
-            <input
-              v-model.number="form.rows"
-              type="number"
-              min="1"
-              max="30"
-              class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
-            />
-          </label>
-          <label class="block">
-            <span class="mb-2 block text-sm text-stone-500">横向座位数</span>
-            <input
-              v-model.number="form.columns"
-              type="number"
-              min="1"
-              max="30"
-              class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
-            />
-          </label>
-          <label class="block">
-            <span class="mb-2 block text-sm text-stone-500">门的位置</span>
-            <select
-              v-model="form.doorSide"
-              class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
-            >
+        <section class="workspace-section">
+          <h2>教室布局</h2>
+          <label class="workspace-field">
+            <span>门的位置</span>
+            <select v-model="form.doorSide" class="workspace-input">
               <option value="left">左侧</option>
               <option value="right">右侧</option>
             </select>
           </label>
-          <label class="flex items-end">
-            <span class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700">
-              <span class="mb-2 block text-sm text-stone-500">显示学号</span>
-              <span class="flex items-center gap-2">
-                <input
-                  v-model="form.showStudentNo"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-stone-300 text-stone-950 focus:ring-stone-950"
-                />
-                <span>{{ form.showStudentNo ? "开启" : "关闭" }}</span>
-              </span>
-            </span>
-          </label>
-          <div class="flex items-end gap-2">
-            <button
-              class="flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
-              type="button"
-              @click="exportJson"
-            >
-              导出 JSON
-            </button>
-            <button
-              class="flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
-              type="button"
-              @click="openImportFile"
-            >
-              导入 JSON
-            </button>
-            <input
-              ref="importFileInput"
-              class="hidden"
-              type="file"
-              accept="application/json,.json"
-              @change="importJson"
-            />
-          </div>
-          <div class="flex items-end">
-            <button
-              class="w-full rounded-lg bg-stone-950 px-4 py-2 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400"
-              type="submit"
-              :disabled="saving"
-            >
-              {{ saving ? "保存中" : "保存" }}
-            </button>
-          </div>
-          <div class="md:col-span-6">
-            <span class="mb-2 block text-sm text-stone-500">过道位置</span>
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="column in aisleOptions"
-                :key="column"
-                class="rounded-lg border px-3 py-2 text-sm transition"
-                :class="hasAisleAfter(column)
-                  ? 'border-stone-950 bg-stone-950 text-white'
-                  : 'border-stone-300 bg-white text-stone-700 hover:border-stone-950'"
-                type="button"
-                @click="toggleAisle(column)"
-              >
-                第 {{ column + 1 }} 列后
+          <div class="workspace-field">
+            <span>过道位置</span>
+            <div class="workspace-aisles">
+              <button v-for="column in aisleOptions" :key="column" type="button"
+                :class="{ 'is-active': hasAisleAfter(column) }"
+                :aria-pressed="hasAisleAfter(column)"
+                :title="`第 ${column + 1} 列后设置过道`" @click="toggleAisle(column)">
+                {{ column + 1 }} / {{ column + 2 }}
               </button>
-              <span v-if="aisleOptions.length === 0" class="text-sm text-stone-500">
-                至少两列座位才可以添加过道
-              </span>
             </div>
           </div>
+          <label class="workspace-toggle">
+            显示学号
+            <input v-model="form.showStudentNo" type="checkbox" />
+          </label>
+        </section>
+
+        <section class="workspace-section">
+          <h2>数据</h2>
+          <div class="workspace-button-row">
+            <button class="workspace-btn" type="button" @click="exportJson"><Download :size="15" />导出</button>
+            <button class="workspace-btn" type="button" @click="openImportFile"><Upload :size="15" />导入</button>
+          </div>
+          <input ref="importFileInput" class="hidden" type="file" accept="application/json,.json" @change="importJson" />
+        </section>
+      </aside>
+
+      <section class="workspace-stage">
+        <div class="stage-heading">
+          <div>
+            <h2>座位图</h2>
+            <p>第 1 排为前方</p>
+          </div>
+          <span class="stage-badge">{{ form.aisleAfterColumns.length }} 条过道</span>
         </div>
-
-        <p v-if="message" class="mx-auto max-w-6xl text-sm text-emerald-700">{{ message }}</p>
-        <p v-if="error" class="mx-auto max-w-6xl text-sm text-red-700">{{ error }}</p>
-        <p class="mx-auto max-w-6xl text-sm text-stone-500">
-          拖动座位标题可对调单人；拖动同桌中间的三点可整组对调。
-        </p>
-
-        <div class="w-full overflow-x-auto pb-2">
-          <div class="mx-auto flex w-max items-stretch gap-3">
-            <div
-              v-if="form.doorSide === 'left'"
-              class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1"
-            >
-              <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
-                前门
-              </div>
-              <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
-              <div class="rounded-lg border border-stone-300 bg-white px-2 py-3 text-center text-sm font-medium text-stone-800 shadow-sm">
-                后门
-              </div>
+        <p v-if="error" class="workspace-error workspace-stage__message">{{ error }}</p>
+        <p v-if="message" class="workspace-notice workspace-stage__message">{{ message }}</p>
+        <div class="stage-scroll">
+          <div class="stage-canvas">
+            <div v-if="form.doorSide === 'left'" class="workspace-door">
+              <span>前门</span><i /><span>后门</span>
             </div>
-
-            <div
-              class="grid gap-2"
-              :style="{ gridTemplateColumns: configGridTemplateColumns }"
-            >
-              <div
-                v-for="column in validAisleAfterColumns"
-                :key="`aisle:${column}`"
-                class="pointer-events-none flex min-h-full items-center justify-center border-x border-dashed border-stone-400 text-xs font-medium text-stone-500"
-                :style="{ gridColumn: aisleGridColumn(column), gridRow: `1 / span ${form.rows}` }"
-              >
-                <span class="vertical-rl tracking-normal">过道</span>
+            <div class="grid gap-2" :style="{ gridTemplateColumns: configGridTemplateColumns }">
+              <div v-for="column in validAisleAfterColumns" :key="`aisle:${column}`" class="workspace-aisle"
+                :style="{ gridColumn: aisleGridColumn(column), gridRow: `1 / span ${form.rows}` }">
+                <span>过道</span>
               </div>
-              <button
-                v-for="pair in deskPairHandles"
-                :key="`pair:${pair.row}:${pair.startColumn}`"
-                class="flex min-h-full items-center justify-center rounded-md text-stone-400 transition hover:bg-stone-200 hover:text-stone-700"
-                :class="{
-                  'bg-stone-950 text-white': isPairDragTarget(pair.row, pair.startColumn),
-                  'opacity-40': draggedPairKey === pairKey(pair.row, pair.startColumn)
-                }"
+              <button v-for="pair in deskPairHandles" :key="`pair:${pair.row}:${pair.startColumn}`"
+                class="workspace-pair-handle" :class="{ 'is-target': isPairDragTarget(pair.row, pair.startColumn) }"
                 :style="{ gridColumn: deskPairHandleGridColumn(pair.startColumn), gridRow: pair.row + 1 }"
-                draggable="true"
-                title="拖动以交换同桌"
-                type="button"
+                draggable="true" title="拖动以交换同桌" :aria-label="`交换第 ${pair.row + 1} 排第 ${pair.startColumn + 1}-${pair.startColumn + 2} 列的同桌`" type="button"
                 @dragstart="startPairDrag(pair.row, pair.startColumn, $event)"
                 @dragenter.prevent="setPairDragTarget(pair.row, pair.startColumn)"
                 @dragover.prevent="setPairDragTarget(pair.row, pair.startColumn)"
-                @drop.prevent="swapDraggedPair(pair.row, pair.startColumn)"
-                @dragend="clearPairDrag"
-              >
-                <span class="flex flex-col items-center gap-1">
-                  <span class="h-1 w-1 rounded-full bg-current" />
-                  <span class="h-1 w-1 rounded-full bg-current" />
-                  <span class="h-1 w-1 rounded-full bg-current" />
-                </span>
+                @drop.prevent="swapDraggedPair(pair.row, pair.startColumn)" @dragend="clearPairDrag">
+                <GripVertical :size="14" />
               </button>
-              <div
-                v-for="seat in sortedSeats"
-                :key="seatKey(seat)"
-                class="min-w-0 rounded-lg border p-2 shadow-sm transition"
+              <div v-for="seat in sortedSeats" :key="seatKey(seat)" class="editor-seat"
+                :class="{ 'is-target': dragOverSeatKey === seatKey(seat) || isSeatInPair(seat, dragOverPairKey),
+                  'is-dragged': draggedSeatKey === seatKey(seat) || isSeatInPair(seat, draggedPairKey) }"
                 :style="{ gridColumn: seatGridColumn(seat.column), gridRow: seat.row + 1 }"
-                :class="{
-                  'border-stone-950 bg-amber-50 shadow-lg ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100 scale-[1.02]': dragOverSeatKey === seatKey(seat),
-                  'border-stone-950 bg-stone-50 shadow-lg ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100': isSeatInPair(seat, dragOverPairKey),
-                  'border-stone-400 bg-white opacity-70': draggedSeatKey === seatKey(seat) || isSeatInPair(seat, draggedPairKey),
-                  'border-stone-200 bg-white': draggedSeatKey !== seatKey(seat) && dragOverSeatKey !== seatKey(seat) && !isSeatInPair(seat, draggedPairKey) && !isSeatInPair(seat, dragOverPairKey)
-                }"
-                @dragenter.prevent="setSeatDragTarget(seat)"
-                @dragover.prevent="setSeatDragTarget(seat)"
-                @drop.prevent="dropOnSeat(seat)"
-              >
-                <div
-                  class="mb-2 truncate rounded-md px-1 py-1 text-xs text-stone-500 transition hover:bg-stone-100"
-                  :class="draggedSeatKey === seatKey(seat) ? 'cursor-grabbing' : 'cursor-grab'"
-                  draggable="true"
-                  title="拖动以交换座位"
-                  @dragstart="startSeatDrag(seat, $event)"
-                  @dragend="clearSeatDrag"
-                >
-                  第 {{ seat.row + 1 }} 排 / 第 {{ seat.column + 1 }} 列
+                @dragenter.prevent="setSeatDragTarget(seat)" @dragover.prevent="setSeatDragTarget(seat)"
+                @drop.prevent="dropOnSeat(seat)">
+                <div class="editor-seat__handle" draggable="true" title="拖动以交换座位"
+                  @dragstart="startSeatDrag(seat, $event)" @dragend="clearSeatDrag">
+                  {{ seat.row + 1 }} 排 · {{ seat.column + 1 }} 列
                 </div>
-                <input
-                  v-model="seat.name"
-                  placeholder="姓名"
-                  class="mb-2 w-full rounded-lg border border-stone-300 px-2 py-1.5 outline-none transition focus:border-stone-950"
-                />
-                <input
-                  v-model="seat.studentNo"
-                  placeholder="学号"
-                  class="w-full rounded-lg border border-stone-300 px-2 py-1.5 outline-none transition focus:border-stone-950"
-                />
+                <input v-model="seat.name" :aria-label="`第 ${seat.row + 1} 排第 ${seat.column + 1} 列姓名`" placeholder="姓名" />
+                <input v-model="seat.studentNo" :aria-label="`第 ${seat.row + 1} 排第 ${seat.column + 1} 列学号`" placeholder="学号" />
               </div>
             </div>
-
-            <div
-              v-if="form.doorSide === 'right'"
-              class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1"
-            >
-              <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
-                前门
-              </div>
-              <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
-              <div class="rounded-lg border border-stone-300 bg-white px-2 py-3 text-center text-sm font-medium text-stone-800 shadow-sm">
-                后门
-              </div>
+            <div v-if="form.doorSide === 'right'" class="workspace-door">
+              <span>前门</span><i /><span>后门</span>
             </div>
           </div>
         </div>
-      </form>
-    </section>
+      </section>
+
+      <footer class="workspace-savebar">
+        <span class="workspace-savebar__status">{{ isDirty ? '有尚未保存的修改' : message || '所有修改已保存' }}</span>
+        <button class="workspace-btn workspace-btn--primary" type="submit" :disabled="saving || !isDirty">
+          <Save :size="16" />{{ saving ? '保存中…' : '保存座位表' }}
+        </button>
+      </footer>
+    </form>
   </main>
 </template>

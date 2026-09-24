@@ -29,10 +29,10 @@ const gridTemplateColumns = computed(() => {
   const tracks: string[] = [];
 
   for (let column = 0; column < props.columns; column += 1) {
-    tracks.push("minmax(8rem, 1fr)");
+    tracks.push("minmax(clamp(7rem, 8vw, 10rem), 1fr)");
 
     if (aisleColumnSet.value.has(column)) {
-      tracks.push("minmax(2rem, 2.5rem)");
+      tracks.push("minmax(1.5rem, 2rem)");
     }
   }
 

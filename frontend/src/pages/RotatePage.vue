@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { onBeforeRouteLeave } from "vue-router";
+import { ChevronDown, ChevronUp, Play, Plus, Repeat2, RotateCcw, Save, Trash2 } from "@lucide/vue";
+import AdminHeader from "../components/AdminHeader.vue";
+import AdminLogin from "../components/AdminLogin.vue";
 import { fetchSeatPlan, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
 import { useAdminSession } from "../state/adminSession";
 import type {
@@ -22,6 +26,8 @@ const message = ref("");
 const error = ref("");
 const playingPreview = ref(false);
 const previewRuleIndex = ref(-1);
+const selectedRuleId = ref<string | null>(null);
+const savedRules = ref("");
 const previewPhase = ref<"idle" | "highlight" | "move" | "settle" | "final">("idle");
 let previewTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -51,6 +57,16 @@ const form = reactive<EditableSeatPlan>({
 });
 
 const groups = computed(() => deriveSeatGroups(form.columns, form.aisleAfterColumns));
+const selectedRule = computed(() => form.rotationConfig.rules.find((rule) => rule.id === selectedRuleId.value) ?? null);
+const isDirty = computed(() => savedRules.value !== "" && JSON.stringify(form.rotationConfig.rules) !== savedRules.value);
+function ruleTitle(rule: RotationRule) {
+  return rule.type === "groupSwap" ? "大组互换" : rule.type === "groupCycle" ? "环形轮换" : "单人互换";
+}
+function ruleSummary(rule: RotationRule) {
+  if (rule.type === "groupSwap") return `大组 ${rule.sourceGroupIndex + 1} ↔ 大组 ${rule.targetGroupIndex + 1}`;
+  if (rule.type === "groupCycle") return `大组 ${rule.groupIndex + 1} · ${rule.direction === "forward" ? "向后" : "向前"} ${rule.steps} 步`;
+  return `${rule.sourceRow + 1} 排 ${rule.sourceColumn + 1} 列 ↔ ${rule.targetRow + 1} 排 ${rule.targetColumn + 1} 列`;
+}
 
 const previewFrames = computed(() =>
   buildRotationFrames(form.seats, groups.value, form.rotationConfig)
@@ -130,7 +146,7 @@ const previewGridTemplateColumns = computed(() => {
   const tracks: string[] = [];
 
   for (let column = 0; column < form.columns; column += 1) {
-    tracks.push("8rem");
+    tracks.push("clamp(6rem, 8vw, 8rem)");
 
     if (previewAisleColumnSet.value.has(column)) {
       tracks.push("2rem");
@@ -227,6 +243,8 @@ async function loadPlan() {
   try {
     const plan = await fetchSeatPlan();
     Object.assign(form, toEditablePlan(plan));
+    savedRules.value = JSON.stringify(form.rotationConfig.rules);
+    selectedRuleId.value = form.rotationConfig.rules[0]?.id ?? null;
     resetPreview();
   } catch (err) {
     error.value = err instanceof Error ? err.message : "加载失败";
@@ -252,6 +270,7 @@ async function authenticate() {
 }
 
 function leaveAdmin() {
+  if (isDirty.value && !window.confirm("有尚未保存的轮换规则，确定退出管理吗？")) return;
   clearAdminSession();
   loginPassword.value = "";
   form.seats = [];
@@ -276,6 +295,7 @@ function addGroupSwapRule() {
     sourceGroupIndex: sourceGroup.index,
     targetGroupIndex: targetGroup.index
   } satisfies RotationGroupSwapRule);
+  selectedRuleId.value = form.rotationConfig.rules.at(-1)?.id ?? null;
 }
 
 function addGroupCycleRule() {
@@ -293,6 +313,7 @@ function addGroupCycleRule() {
     direction: "forward",
     steps: 1
   } satisfies RotationGroupCycleRule);
+  selectedRuleId.value = form.rotationConfig.rules.at(-1)?.id ?? null;
 }
 
 function addSeatSwapRule() {
@@ -312,10 +333,12 @@ function addSeatSwapRule() {
     targetRow: target.row,
     targetColumn: target.column
   } satisfies RotationSeatSwapRule);
+  selectedRuleId.value = form.rotationConfig.rules.at(-1)?.id ?? null;
 }
 
 function removeRule(id: string) {
   form.rotationConfig.rules = form.rotationConfig.rules.filter((rule) => rule.id !== id);
+  if (selectedRuleId.value === id) selectedRuleId.value = form.rotationConfig.rules[0]?.id ?? null;
 }
 
 function moveRule(id: string, direction: -1 | 1) {
@@ -728,6 +751,7 @@ async function saveRules() {
       seats: form.seats.map(cloneSeat)
     }, adminPassword.value);
     Object.assign(form, toEditablePlan(plan));
+    savedRules.value = JSON.stringify(form.rotationConfig.rules);
     message.value = "轮换规则已保存";
   } catch (err) {
     error.value = err instanceof Error ? err.message : "保存失败";
@@ -737,6 +761,7 @@ async function saveRules() {
 }
 
 async function executeRotation() {
+  if (!window.confirm(`将按 ${form.rotationConfig.rules.length} 条规则更新当前座位表，确定执行吗？`)) return;
   saving.value = true;
   error.value = "";
   message.value = "";
@@ -751,6 +776,7 @@ async function executeRotation() {
       seats: finalSeats.map(cloneSeat)
     }, adminPassword.value);
     Object.assign(form, toEditablePlan(plan));
+    savedRules.value = JSON.stringify(form.rotationConfig.rules);
     resetPreview();
     message.value = "已执行一键轮换";
   } catch (err) {
@@ -760,6 +786,8 @@ async function executeRotation() {
   }
 }
 
+watch(() => JSON.stringify(form.rotationConfig.rules), () => resetPreview());
+
 watch(
   () => [form.rows, form.columns, form.aisleAfterColumns.join(","), form.seats.length],
   () => {
@@ -767,6 +795,8 @@ watch(
     resetPreview();
   }
 );
+
+onBeforeRouteLeave(() => !isDirty.value || window.confirm("有尚未保存的轮换规则，确定离开吗？"));
 
 onMounted(() => {
   if (authenticated.value) {
@@ -782,403 +812,139 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main
-    v-if="!authenticated"
-    class="min-h-screen bg-stone-950 px-5 py-8 text-white"
-  >
-    <section class="mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl flex-col justify-between">
-      <div class="flex items-center justify-between">
-        <p class="text-sm text-stone-400">SeatSheet Rotate</p>
-        <RouterLink
-          to="/config"
-          class="rounded-lg border border-stone-700 px-3 py-2 text-sm text-stone-300 transition hover:border-white hover:text-white"
-        >
-          返回设置页
-        </RouterLink>
+  <AdminLogin v-if="!authenticated" v-model:password="loginPassword" section="轮换规则"
+    :busy="authenticating" :error="error" @submit="authenticate" />
+
+  <main v-else class="admin-page">
+    <AdminHeader active="rotate" :name="form.name" :dirty="isDirty" @logout="leaveAdmin" />
+    <div class="workspace-title">
+      <div>
+        <h1>轮换规则</h1>
+        <p>按顺序设置规则，随时查看座位变化</p>
       </div>
-
-      <form class="grid gap-10 md:grid-cols-[1fr_minmax(18rem,26rem)] md:items-end" @submit.prevent="authenticate">
-        <div>
-          <p class="mb-4 text-sm text-stone-400">轮换入口</p>
-          <h1 class="max-w-3xl text-4xl font-semibold tracking-normal sm:text-5xl">
-            输入管理密码后才能设置并执行一键轮换。
-          </h1>
-          <p class="mt-5 max-w-2xl text-base leading-7 text-stone-400">
-            轮换规则和密码都只保存在当前运行内存中，不写入 Cookie 或浏览器存储。
-          </p>
-        </div>
-
-        <div>
-          <label class="block">
-            <span class="mb-3 block text-sm text-stone-400">管理密码</span>
-            <input
-              v-model="loginPassword"
-              type="password"
-              autocomplete="off"
-              class="w-full border-0 border-b border-stone-600 bg-transparent px-0 py-3 text-lg text-white outline-none transition placeholder:text-stone-600 focus:border-white"
-              placeholder="输入密码"
-              required
-            />
-          </label>
-          <button
-            class="mt-6 w-full rounded-lg bg-white px-4 py-3 text-stone-950 transition hover:bg-stone-200 disabled:cursor-not-allowed disabled:bg-stone-600 disabled:text-stone-300"
-            type="submit"
-            :disabled="authenticating"
-          >
-            {{ authenticating ? "验证中" : "进入轮换设置" }}
-          </button>
-          <p v-if="error" class="mt-3 text-sm text-red-300">{{ error }}</p>
-        </div>
-      </form>
-
-      <p class="text-sm text-stone-500">SeatSheet 不会在本机保存管理凭据。</p>
-    </section>
-  </main>
-
-  <main v-else class="min-h-screen bg-stone-100 px-5 py-6 text-stone-950">
-    <section class="mx-auto w-full">
-      <div class="mx-auto mb-6 flex max-w-6xl flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p class="text-sm text-stone-500">SeatSheet Rotate</p>
-          <h1 class="text-3xl font-semibold tracking-normal">一键轮换设置</h1>
-        </div>
-        <div class="flex gap-2">
-          <RouterLink
-            to="/config"
-            class="w-fit rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
-          >
-            返回设置页
-          </RouterLink>
-          <button
-            class="rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 transition hover:border-stone-950 hover:text-stone-950"
-            type="button"
-            @click="leaveAdmin"
-          >
-            退出管理
-          </button>
-        </div>
-      </div>
-
-      <div v-if="loading" class="mx-auto max-w-6xl rounded-lg border border-stone-200 bg-white p-5 text-stone-500">
-        正在加载轮换设置
-      </div>
-
-      <div v-else class="space-y-6">
-        <div class="mx-auto max-w-6xl rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-          <div class="mb-3 flex flex-wrap gap-2">
-            <button
-              class="rounded-lg bg-stone-950 px-3 py-2 text-sm text-white transition hover:bg-stone-800"
-              type="button"
-              @click="addGroupSwapRule"
-            >
-              添加大组互换
-            </button>
-            <button
-              class="rounded-lg bg-stone-950 px-3 py-2 text-sm text-white transition hover:bg-stone-800"
-              type="button"
-              @click="addGroupCycleRule"
-            >
-              添加环形轮换
-            </button>
-            <button
-              class="rounded-lg bg-stone-950 px-3 py-2 text-sm text-white transition hover:bg-stone-800"
-              type="button"
-              @click="addSeatSwapRule"
-            >
-              添加手动互换
-            </button>
+      <span class="workspace-title__meta">{{ form.rotationConfig.rules.length }} 条规则</span>
+    </div>
+    <div v-if="loading" class="workspace-loading">正在加载轮换设置…</div>
+    <div v-else class="workspace workspace--rotate">
+      <aside class="workspace-sidebar">
+        <section class="workspace-section">
+          <h2>添加规则</h2>
+          <div class="rule-add-actions">
+            <button class="workspace-btn" type="button" @click="addGroupSwapRule"><Plus :size="14" />大组互换</button>
+            <button class="workspace-btn" type="button" @click="addGroupCycleRule"><Plus :size="14" />环形轮换</button>
+            <button class="workspace-btn" type="button" @click="addSeatSwapRule"><Plus :size="14" />单人互换</button>
           </div>
-          <div class="flex flex-wrap gap-2 text-sm text-stone-500">
-            <span
-              v-for="group in groups"
-              :key="group.index"
-              class="rounded-lg border border-stone-300 px-3 py-2"
-            >
-              大组 {{ group.index + 1 }}：第 {{ group.startColumn + 1 }}-{{ group.endColumn + 1 }} 列
-            </span>
-          </div>
-        </div>
+        </section>
 
-        <div class="mx-auto max-w-6xl space-y-3">
-          <div
-            v-for="(rule, index) in form.rotationConfig.rules"
-            :key="rule.id"
-            class="rounded-lg border border-stone-200 bg-white p-4 shadow-sm"
-          >
-            <div class="mb-3 flex items-center justify-between gap-3">
-              <div class="text-sm font-medium text-stone-950">规则 {{ index + 1 }}</div>
-              <div class="flex gap-2">
-                <button
-                  class="rounded-lg border border-stone-300 px-2 py-1 text-sm text-stone-700"
-                  type="button"
-                  @click="moveRule(rule.id, -1)"
-                >
-                  上移
-                </button>
-                <button
-                  class="rounded-lg border border-stone-300 px-2 py-1 text-sm text-stone-700"
-                  type="button"
-                  @click="moveRule(rule.id, 1)"
-                >
-                  下移
-                </button>
-                <button
-                  class="rounded-lg border border-red-200 px-2 py-1 text-sm text-red-700"
-                  type="button"
-                  @click="removeRule(rule.id)"
-                >
-                  删除
-                </button>
+        <section class="workspace-section">
+          <div class="rule-section-heading"><h2>执行顺序</h2><span>{{ form.rotationConfig.rules.length }} 步</span></div>
+          <div class="rule-list">
+            <div v-for="(rule, index) in form.rotationConfig.rules" :key="rule.id" class="rule-item"
+              :class="{ 'is-selected': selectedRuleId === rule.id }">
+              <span class="rule-item__number">{{ index + 1 }}.</span>
+              <button class="rule-item__body" type="button" @click="selectedRuleId = rule.id">
+                <span class="rule-item__title">{{ ruleTitle(rule) }}</span>
+                <span class="rule-item__summary">{{ ruleSummary(rule) }}</span>
+              </button>
+              <div class="rule-item__tools">
+                <button type="button" title="上移规则" aria-label="上移规则" :disabled="index === 0" @click="moveRule(rule.id, -1)"><ChevronUp :size="15" /></button>
+                <button type="button" title="下移规则" aria-label="下移规则" :disabled="index === form.rotationConfig.rules.length - 1" @click="moveRule(rule.id, 1)"><ChevronDown :size="15" /></button>
+                <button type="button" title="删除规则" aria-label="删除规则" @click="removeRule(rule.id)"><Trash2 :size="15" /></button>
               </div>
             </div>
-
-            <div v-if="rule.type === 'groupSwap'" class="grid gap-3 md:grid-cols-2">
-              <label class="block">
-                <span class="mb-2 block text-sm text-stone-500">来源大组</span>
-                <select
-                  v-model.number="rule.sourceGroupIndex"
-                  class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
-                >
-                  <option
-                    v-for="group in groupOptions"
-                    :key="group.value"
-                    :value="group.value"
-                  >
-                    {{ group.label }}
-                  </option>
-                </select>
-              </label>
-              <label class="block">
-                <span class="mb-2 block text-sm text-stone-500">目标大组</span>
-                <select
-                  v-model.number="rule.targetGroupIndex"
-                  class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
-                >
-                  <option
-                    v-for="group in groupSwapTargets(rule)"
-                    :key="group.index"
-                    :value="group.index"
-                  >
-                    大组 {{ group.index + 1 }}（第 {{ group.startColumn + 1 }}-{{ group.endColumn + 1 }} 列）
-                  </option>
-                </select>
-              </label>
-            </div>
-
-            <div v-else-if="rule.type === 'groupCycle'" class="grid gap-3 md:grid-cols-3">
-              <label class="block">
-                <span class="mb-2 block text-sm text-stone-500">轮换大组</span>
-                <select
-                  v-model.number="rule.groupIndex"
-                  class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
-                >
-                  <option
-                    v-for="group in groupOptions"
-                    :key="group.value"
-                    :value="group.value"
-                  >
-                    {{ group.label }}
-                  </option>
-                </select>
-              </label>
-              <label class="block">
-                <span class="mb-2 block text-sm text-stone-500">方向</span>
-                <select
-                  v-model="rule.direction"
-                  class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
-                >
-                  <option value="forward">向后循环</option>
-                  <option value="backward">向前循环</option>
-                </select>
-              </label>
-              <label class="block">
-                <span class="mb-2 block text-sm text-stone-500">步数</span>
-                <input
-                  v-model.number="rule.steps"
-                  type="number"
-                  min="1"
-                  max="200"
-                  class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
-                />
-              </label>
-            </div>
-
-            <div v-else class="grid gap-3 md:grid-cols-2">
-              <label class="block">
-                <span class="mb-2 block text-sm text-stone-500">位置 A</span>
-                <select
-                  :value="seatSwapValue(rule, 'source')"
-                  class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
-                  @change="updateSeatSwap(rule, 'source', ($event.target as HTMLSelectElement).value)"
-                >
-                  <option
-                    v-for="seat in seatOptions"
-                    :key="seat.value"
-                    :value="seat.value"
-                  >
-                    {{ seat.label }}
-                  </option>
-                </select>
-              </label>
-              <label class="block">
-                <span class="mb-2 block text-sm text-stone-500">位置 B</span>
-                <select
-                  :value="seatSwapValue(rule, 'target')"
-                  class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-stone-950"
-                  @change="updateSeatSwap(rule, 'target', ($event.target as HTMLSelectElement).value)"
-                >
-                  <option
-                    v-for="seat in seatOptions"
-                    :key="seat.value"
-                    :value="seat.value"
-                  >
-                    {{ seat.label }}
-                  </option>
-                </select>
-              </label>
-            </div>
+            <p v-if="!form.rotationConfig.rules.length" class="rule-empty">还没有规则</p>
           </div>
+        </section>
 
-          <div
-            v-if="form.rotationConfig.rules.length === 0"
-            class="rounded-lg border border-dashed border-stone-300 bg-white p-5 text-sm text-stone-500"
-          >
-            还没有轮换规则。可以先添加大组互换、环形轮换或手动互换。
-          </div>
+        <section v-if="selectedRule" class="workspace-section rule-editor">
+          <h2>{{ ruleTitle(selectedRule) }} · 参数</h2>
+          <template v-if="selectedRule.type === 'groupSwap'">
+            <label class="workspace-field"><span>来源大组</span>
+              <select v-model.number="selectedRule.sourceGroupIndex" class="workspace-input">
+                <option v-for="group in groupOptions" :key="group.value" :value="group.value">{{ group.label }}</option>
+              </select>
+            </label>
+            <label class="workspace-field"><span>目标大组</span>
+              <select v-model.number="selectedRule.targetGroupIndex" class="workspace-input">
+                <option v-for="group in groupSwapTargets(selectedRule)" :key="group.index" :value="group.index">大组 {{ group.index + 1 }}（第 {{ group.startColumn + 1 }}-{{ group.endColumn + 1 }} 列）</option>
+              </select>
+            </label>
+          </template>
+          <template v-else-if="selectedRule.type === 'groupCycle'">
+            <label class="workspace-field"><span>轮换大组</span>
+              <select v-model.number="selectedRule.groupIndex" class="workspace-input">
+                <option v-for="group in groupOptions" :key="group.value" :value="group.value">{{ group.label }}</option>
+              </select>
+            </label>
+            <div class="workspace-field-row">
+              <label class="workspace-field"><span>方向</span>
+                <select v-model="selectedRule.direction" class="workspace-input"><option value="forward">向后</option><option value="backward">向前</option></select>
+              </label>
+              <label class="workspace-field"><span>步数</span>
+                <input v-model.number="selectedRule.steps" type="number" min="1" max="200" class="workspace-input" />
+              </label>
+            </div>
+          </template>
+          <template v-else>
+            <label class="workspace-field"><span>位置 A</span>
+              <select :value="seatSwapValue(selectedRule, 'source')" class="workspace-input" @change="updateSeatSwap(selectedRule, 'source', ($event.target as HTMLSelectElement).value)">
+                <option v-for="seat in seatOptions" :key="seat.value" :value="seat.value">{{ seat.label }}</option>
+              </select>
+            </label>
+            <label class="workspace-field"><span>位置 B</span>
+              <select :value="seatSwapValue(selectedRule, 'target')" class="workspace-input" @change="updateSeatSwap(selectedRule, 'target', ($event.target as HTMLSelectElement).value)">
+                <option v-for="seat in seatOptions" :key="seat.value" :value="seat.value">{{ seat.label }}</option>
+              </select>
+            </label>
+          </template>
+        </section>
+        <p v-if="error" class="workspace-error workspace-stage__message">{{ error }}</p>
+      </aside>
+
+      <section class="workspace-stage rule-preview">
+        <div class="stage-heading">
+          <div><h2>动态预览</h2><p>{{ activePreviewLabel }} · {{ previewStatusText() }}</p></div>
+          <span class="stage-badge">{{ form.rows }} 排 · {{ form.columns }} 列</span>
         </div>
-
-        <div class="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div class="text-sm text-stone-500">动画预览</div>
-            <div class="text-base font-medium text-stone-950">{{ activePreviewLabel }}</div>
-            <div class="text-sm text-stone-500">{{ previewStatusText() }}</div>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <button
-              class="rounded-lg border px-3 py-2 text-sm transition disabled:cursor-not-allowed"
-              :class="form.rotationConfig.rules.length > 0
-                ? 'border-stone-950 bg-stone-950 text-white hover:bg-stone-800'
-                : 'border-stone-300 bg-stone-200 text-stone-400'"
-              type="button"
-              :disabled="form.rotationConfig.rules.length === 0"
-              @click="playPreview"
-            >
-              {{ previewButtonText() }}
+        <div class="rule-preview__toolbar">
+          <div class="workspace-button-row">
+            <button class="workspace-btn workspace-btn--primary" type="button" :disabled="!form.rotationConfig.rules.length || playingPreview" @click="playPreview">
+              <Play :size="15" />{{ previewButtonText() }}
             </button>
-            <button
-              class="rounded-lg border px-3 py-2 text-sm transition disabled:cursor-not-allowed"
-              :class="previewRuleIndex >= 0 || playingPreview
-                ? 'border-stone-300 text-stone-700 hover:border-stone-950 hover:text-stone-950'
-                : 'border-stone-200 text-stone-400'"
-              type="button"
-              :disabled="previewRuleIndex < 0 && !playingPreview"
-              @click="resetPreview"
-            >
-              回到开始
+            <button class="workspace-btn" type="button" :disabled="previewRuleIndex < 0 && !playingPreview" @click="resetPreview">
+              <RotateCcw :size="15" />回到开始
             </button>
           </div>
+          <span class="rule-preview__status">{{ playingPreview ? `第 ${previewRuleIndex + 1} / ${form.rotationConfig.rules.length} 步` : '预览不修改座位数据' }}</span>
         </div>
-
-        <div v-if="form.rotationConfig.rules.length > 0" class="mx-auto flex max-w-6xl flex-wrap gap-2 text-xs">
-          <span
-            v-for="(rule, index) in form.rotationConfig.rules"
-            :key="rule.id"
-            class="rounded-lg border px-2 py-1 transition"
-            :class="index === previewRuleIndex
-              ? 'border-stone-950 bg-stone-950 text-white'
-              : 'border-stone-300 bg-white text-stone-600'"
-          >
-            {{ index + 1 }}.
-            {{ rule.type === "groupSwap" ? "大组互换" : rule.type === "groupCycle" ? "环形轮换" : "手动互换" }}
-          </span>
-        </div>
-
-        <div class="w-full overflow-x-auto pb-2">
-          <div class="mx-auto flex w-max items-stretch gap-3">
-            <div v-if="form.doorSide === 'left'" class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1">
-              <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
-                前门
-              </div>
-              <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
-              <div class="rounded-lg border border-stone-300 bg-white px-2 py-3 text-center text-sm font-medium text-stone-800 shadow-sm">
-                后门
-              </div>
-            </div>
-
-            <TransitionGroup
-              class="grid gap-2"
-              name="preview-unit"
-              tag="div"
-              :style="{ gridTemplateColumns: previewGridTemplateColumns }"
-            >
-              <div
-                v-for="column in validPreviewAisleAfterColumns"
-                :key="`preview-aisle:${column}`"
-                class="pointer-events-none flex min-h-full items-center justify-center border-x border-dashed border-stone-400 text-xs font-medium text-stone-500"
-                :style="{ gridColumn: previewAisleGridColumn(column), gridRow: `1 / span ${form.rows}` }"
-              >
-                <span class="vertical-rl tracking-normal">过道</span>
-              </div>
-              <div
-                v-for="unit in previewUnits"
-                :key="unit.key"
-                :class="previewUnitClass(unit)"
-                :style="previewUnitStyle(unit)"
-              >
+        <div class="stage-scroll">
+          <div class="stage-canvas">
+            <div v-if="form.doorSide === 'left'" class="workspace-door"><span>前门</span><i /><span>后门</span></div>
+            <TransitionGroup class="grid gap-2" name="preview-unit" tag="div" :style="{ gridTemplateColumns: previewGridTemplateColumns }">
+              <div v-for="column in validPreviewAisleAfterColumns" :key="`preview-aisle:${column}`" class="workspace-aisle"
+                :style="{ gridColumn: previewAisleGridColumn(column), gridRow: `1 / span ${form.rows}` }"><span>过道</span></div>
+              <div v-for="unit in previewUnits" :key="unit.key" :class="previewUnitClass(unit)" :style="previewUnitStyle(unit)">
                 <div :class="previewUnitGridClass(unit)">
-                  <div
-                    v-for="seat in unit.seats"
-                    :key="`${unit.key}:${seat.column}`"
-                    class="min-w-0 rounded-md px-1"
-                    :class="form.showStudentNo ? '' : 'flex h-full items-center justify-center'"
-                  >
+                  <div v-for="seat in unit.seats" :key="`${unit.key}:${seat.column}`" class="min-w-0 rounded-md px-1"
+                    :class="form.showStudentNo ? '' : 'flex h-full items-center justify-center'">
                     <div :class="previewSeatTitleClass()">{{ activeSeatName(seat) }}</div>
-                    <div v-if="form.showStudentNo" :class="previewSeatNoClass()">
-                      {{ activeSeatStudentNo(seat) }}
-                    </div>
+                    <div v-if="form.showStudentNo" :class="previewSeatNoClass()">{{ activeSeatStudentNo(seat) }}</div>
                   </div>
                 </div>
               </div>
             </TransitionGroup>
-
-            <div v-if="form.doorSide === 'right'" class="flex w-16 shrink-0 flex-col justify-between gap-3 py-1">
-              <div class="rounded-lg border border-stone-300 bg-stone-950 px-2 py-3 text-center text-sm font-medium text-white shadow-sm">
-                前门
-              </div>
-              <div class="min-h-8 flex-1 border-l border-dashed border-stone-300" />
-              <div class="rounded-lg border border-stone-300 bg-white px-2 py-3 text-center text-sm font-medium text-stone-800 shadow-sm">
-                后门
-              </div>
-            </div>
+            <div v-if="form.doorSide === 'right'" class="workspace-door"><span>前门</span><i /><span>后门</span></div>
           </div>
         </div>
+        <p v-if="message" class="workspace-notice workspace-stage__message">{{ message }}</p>
+      </section>
 
-        <div class="mx-auto flex max-w-6xl flex-wrap gap-2">
-          <button
-            class="rounded-lg bg-stone-950 px-4 py-2 text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400"
-            type="button"
-            :disabled="saving"
-            @click="saveRules"
-          >
-            {{ saving ? "处理中" : "保存轮换规则" }}
-          </button>
-          <button
-            class="rounded-lg border border-stone-950 px-4 py-2 text-stone-950 transition hover:bg-stone-950 hover:text-white disabled:cursor-not-allowed disabled:border-stone-300 disabled:text-stone-400"
-            type="button"
-            :disabled="saving"
-            @click="executeRotation"
-          >
-            一键执行轮换
-          </button>
-        </div>
-
-        <p v-if="message" class="mx-auto max-w-6xl text-sm text-emerald-700">{{ message }}</p>
-        <p v-if="error" class="mx-auto max-w-6xl text-sm text-red-700">{{ error }}</p>
-        <p class="mx-auto max-w-6xl text-sm text-stone-500">
-          大组由过道自动切分。环形轮换按组内从前到后、从左到右的格子顺序循环；大组互换目前只允许同宽大组。
-        </p>
-      </div>
-    </section>
+      <footer class="workspace-savebar">
+        <span class="workspace-savebar__status">{{ isDirty ? '规则有尚未保存的修改' : message || '规则已保存' }}</span>
+        <button class="workspace-btn" type="button" :disabled="saving || !isDirty" @click="saveRules"><Save :size="15" />保存规则</button>
+        <button class="workspace-btn workspace-btn--primary" type="button" :disabled="saving || !form.rotationConfig.rules.length" @click="executeRotation"><Repeat2 :size="15" />执行轮换</button>
+      </footer>
+    </div>
   </main>
 </template>
 
