@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
-import { ArrowLeft, ChevronDown, ChevronUp, Play, Plus, Repeat2, RotateCcw, Save, Trash2 } from "@lucide/vue";
+import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, Play, Plus, Repeat2, RotateCcw, Save, Trash2, Undo2 } from "@lucide/vue";
 import AdminHeader from "../components/AdminHeader.vue";
 import AdminLogin from "../components/AdminLogin.vue";
 import { fetchSeatPlan, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
 import { useAdminSession } from "../state/adminSession";
 import type {
   EditableSeatPlan,
-  RotationConfig,
   RotationGroupCycleRule,
   RotationGroupSwapRule,
   RotationRule,
@@ -16,9 +15,11 @@ import type {
   Seat,
   SeatPlan
 } from "../types/seat";
-import { buildRotationFrames, deriveSeatGroups, type SeatGroup } from "../utils/rotation";
+import { buildRotationFrames, cycleColumnsForGroup, cycleTargetRow, deriveSeatGroups, isValidCycleSteps } from "../utils/rotation";
 
 const loading = ref(true);
+const planLoaded = ref(false);
+const expectedUpdatedAt = ref("");
 const saving = ref(false);
 const authenticating = ref(false);
 const loginPassword = ref("");
@@ -59,17 +60,28 @@ const form = reactive<EditableSeatPlan>({
 const groups = computed(() => deriveSeatGroups(form.columns, form.aisleAfterColumns));
 const selectedRule = computed(() => form.rotationConfig.rules.find((rule) => rule.id === selectedRuleId.value) ?? null);
 const isDirty = computed(() => savedRules.value !== "" && JSON.stringify(form.rotationConfig.rules) !== savedRules.value);
+const invalidRules = computed(() => form.rotationConfig.rules.filter((rule) => {
+  if (rule.type === "groupSwap") {
+    const source = groups.value[rule.sourceGroupIndex], target = groups.value[rule.targetGroupIndex];
+    return !source || !target || source === target || source.width !== target.width;
+  }
+  if (rule.type === "groupCycle") return !groups.value[rule.groupIndex] || !isValidCycleSteps(rule.steps);
+  return !form.seats.some((seat) => seat.row === rule.sourceRow && seat.column === rule.sourceColumn) ||
+    !form.seats.some((seat) => seat.row === rule.targetRow && seat.column === rule.targetColumn);
+}));
+const needsReview = computed(() => Boolean(form.rotationConfig.reviewRequired) || invalidRules.value.length > 0);
+const validPreviewConfig = computed(() => ({ rules: form.rotationConfig.rules.filter((rule) => !invalidRules.value.includes(rule)) }));
 function ruleTitle(rule: RotationRule) {
   return rule.type === "groupSwap" ? "大组互换" : rule.type === "groupCycle" ? "环形轮换" : "单人互换";
 }
 function ruleSummary(rule: RotationRule) {
   if (rule.type === "groupSwap") return `大组 ${rule.sourceGroupIndex + 1} ↔ 大组 ${rule.targetGroupIndex + 1}`;
-  if (rule.type === "groupCycle") return `大组 ${rule.groupIndex + 1} · ${rule.direction === "forward" ? "向后" : "向前"} ${rule.steps} 步`;
+  if (rule.type === "groupCycle") return `大组 ${rule.groupIndex + 1} · ${rule.direction === "forward" ? "向后" : "向前"} ${rule.steps} 排`;
   return `${rule.sourceRow + 1} 排 ${rule.sourceColumn + 1} 列 ↔ ${rule.targetRow + 1} 排 ${rule.targetColumn + 1} 列`;
 }
 
 const previewFrames = computed(() =>
-  buildRotationFrames(form.seats, groups.value, form.rotationConfig)
+  buildRotationFrames(form.seats, groups.value, invalidRules.value.length ? { rules: [] } : validPreviewConfig.value)
 );
 
 const previewIdentityFrames = computed(() =>
@@ -80,7 +92,7 @@ const previewIdentityFrames = computed(() =>
       studentNo: null
     })),
     groups.value,
-    form.rotationConfig
+    invalidRules.value.length ? { rules: [] } : validPreviewConfig.value
   )
 );
 
@@ -206,43 +218,9 @@ function cloneSeat(seat: Seat): Seat {
   };
 }
 
-function normalizeRotationConfig(
-  config: RotationConfig,
-  seats: Seat[] = form.seats,
-  seatGroups: SeatGroup[] = groups.value
-) {
-  const validGroupIndexes = new Set(seatGroups.map((group) => group.index));
-  const validSeatKeys = new Set(seats.map((seat) => `${seat.row}:${seat.column}`));
-
-  return {
-    rules: config.rules.filter((rule) => {
-      switch (rule.type) {
-        case "groupSwap": {
-          const sourceGroup = seatGroups.find((group) => group.index === rule.sourceGroupIndex);
-          const targetGroup = seatGroups.find((group) => group.index === rule.targetGroupIndex);
-          return Boolean(
-            sourceGroup &&
-            targetGroup &&
-            sourceGroup.index !== targetGroup.index &&
-            sourceGroup.width === targetGroup.width
-          );
-        }
-        case "groupCycle":
-          return validGroupIndexes.has(rule.groupIndex) && rule.steps >= 1;
-        case "seatSwap":
-          return (
-            validSeatKeys.has(`${rule.sourceRow}:${rule.sourceColumn}`) &&
-            validSeatKeys.has(`${rule.targetRow}:${rule.targetColumn}`)
-          );
-      }
-    })
-  };
-}
-
 function toEditablePlan(plan: SeatPlan): EditableSeatPlan {
   const seats = plan.seats.map(cloneSeat);
   const aisleAfterColumns = plan.aisleAfterColumns ?? [];
-  const seatGroups = deriveSeatGroups(plan.columns, aisleAfterColumns);
 
   return {
     name: plan.name,
@@ -251,21 +229,24 @@ function toEditablePlan(plan: SeatPlan): EditableSeatPlan {
     doorSide: plan.doorSide,
     aisleAfterColumns,
     showStudentNo: plan.showStudentNo ?? true,
-    rotationConfig: normalizeRotationConfig(plan.rotationConfig ?? { rules: [] }, seats, seatGroups),
+    rotationConfig: plan.rotationConfig ?? { rules: [] },
     seats
   };
 }
 
 async function loadPlan() {
   loading.value = true;
+  planLoaded.value = false;
   error.value = "";
 
   try {
     const plan = await fetchSeatPlan();
+    expectedUpdatedAt.value = plan.updatedAt;
     Object.assign(form, toEditablePlan(plan));
     savedRules.value = JSON.stringify(form.rotationConfig.rules);
     selectedRuleId.value = form.rotationConfig.rules[0]?.id ?? null;
     resetPreview();
+    planLoaded.value = true;
   } catch (err) {
     error.value = err instanceof Error ? err.message : "加载失败";
   } finally {
@@ -416,10 +397,6 @@ function previewAisleGridColumn(column: number) {
   return column + 2 + validPreviewAisleAfterColumns.value.filter((aisleColumn) => aisleColumn < column).length;
 }
 
-function cyclicIndex(length: number, current: number) {
-  return ((current % length) + length) % length;
-}
-
 function seatKey(row: number, column: number) {
   return `${row}:${column}`;
 }
@@ -520,32 +497,17 @@ function buildSeatPreviewUnits(seats: Seat[], identities: Seat[]) {
   return sortedSeats.map((seat) => unitFor(seat));
 }
 
-function deskPairColumnsForGroup(group: SeatGroup) {
-  const pairs: number[][] = [];
-
-  for (let index = 0; index < group.columns.length; index += 2) {
-    const pair = group.columns.slice(index, index + 2);
-
-    if (pair.length === 2) {
-      pairs.push(pair);
-    }
-  }
-
-  return pairs;
-}
-
 function buildGroupCyclePreviewUnits(seats: Seat[], identities: Seat[], rule: RotationGroupCycleRule) {
   const group = groups.value.find((item) => item.index === rule.groupIndex);
 
-  if (!group) {
+  if (!group || !isValidCycleSteps(rule.steps)) {
     return buildSeatPreviewUnits(seats, identities);
   }
 
   const map = seatMap(seats);
   const identityMap = seatMap(identities);
   const units: PreviewUnit[] = [];
-  const cycleUnits: PreviewUnit[] = [];
-  const pairColumns = deskPairColumnsForGroup(group);
+  const pairColumns = cycleColumnsForGroup(group);
 
   for (let row = 0; row < form.rows; row += 1) {
     pairColumns.forEach((columns) => {
@@ -558,14 +520,14 @@ function buildGroupCyclePreviewUnits(seats: Seat[], identities: Seat[], rule: Ro
       }
 
       const unit: PreviewUnit = {
-        key: `pair:${unitSeats.map((seat) => previewIdentity(identityMap, seat)).join("|")}`,
+        key: unitSeats.length === 1 ? `seat:${previewIdentity(identityMap, unitSeats[0])}` : `pair:${unitSeats.map((seat) => previewIdentity(identityMap, seat)).join("|")}`,
         row,
         column: columns[0],
         columnSpan: columns.length,
-        seats: unitSeats
+        seats: unitSeats,
+        target: { row: cycleTargetRow(row, form.rows, rule), column: columns[0] }
       };
 
-      cycleUnits.push(unit);
       units.push(unit);
     });
   }
@@ -575,12 +537,6 @@ function buildGroupCyclePreviewUnits(seats: Seat[], identities: Seat[], rule: Ro
   sortSeats(seats)
     .filter((seat) => !movingColumns.has(seat.column))
     .forEach((seat) => units.push(createSeatUnit(seat, previewIdentity(identityMap, seat))));
-
-  const step = rule.direction === "forward" ? rule.steps : -rule.steps;
-  cycleUnits.forEach((unit, index) => {
-    const target = cycleUnits[cyclicIndex(cycleUnits.length, index + step)];
-    unit.target = { row: target.row, column: target.column };
-  });
 
   return units.sort((left, right) => left.row - right.row || left.column - right.column);
 }
@@ -612,6 +568,7 @@ function previewUnitStyle(unit: PreviewUnit) {
 }
 
 function playPreview() {
+  if (!planLoaded.value || invalidRules.value.length || saving.value) return;
   stopPreview();
 
   if (form.rotationConfig.rules.length === 0) {
@@ -756,17 +713,22 @@ function previewStatusText() {
 }
 
 async function saveRules() {
+  if (!planLoaded.value || saving.value || invalidRules.value.length) return;
+  if (needsReview.value && !window.confirm("请确认已逐条核对当前布局下的全部规则。错误的大组或位置可能导致座位表混乱，确定保存并解除警告吗？")) return;
   saving.value = true;
+  resetPreview();
   error.value = "";
   message.value = "";
 
   try {
-    form.rotationConfig = normalizeRotationConfig(form.rotationConfig);
     const plan = await saveSeatPlan({
       ...form,
+      expectedUpdatedAt: expectedUpdatedAt.value,
+      operation: "rules",
       rotationConfig: form.rotationConfig,
       seats: form.seats.map(cloneSeat)
     }, adminPassword.value);
+    expectedUpdatedAt.value = plan.updatedAt;
     Object.assign(form, toEditablePlan(plan));
     savedRules.value = JSON.stringify(form.rotationConfig.rules);
     message.value = "轮换规则已保存";
@@ -778,20 +740,23 @@ async function saveRules() {
 }
 
 async function executeRotation() {
+  if (!planLoaded.value || saving.value || playingPreview.value || needsReview.value || isDirty.value || !form.rotationConfig.rules.length) return;
   if (!window.confirm(`将按 ${form.rotationConfig.rules.length} 条规则更新当前座位表，确定执行吗？`)) return;
   saving.value = true;
   error.value = "";
   message.value = "";
 
   try {
-    form.rotationConfig = normalizeRotationConfig(form.rotationConfig);
     const frames = buildRotationFrames(form.seats, groups.value, form.rotationConfig);
     const finalSeats = frames[frames.length - 1]?.seats ?? form.seats;
     const plan = await saveSeatPlan({
       ...form,
+      expectedUpdatedAt: expectedUpdatedAt.value,
+      operation: "rotate",
       rotationConfig: form.rotationConfig,
       seats: finalSeats.map(cloneSeat)
     }, adminPassword.value);
+    expectedUpdatedAt.value = plan.updatedAt;
     Object.assign(form, toEditablePlan(plan));
     savedRules.value = JSON.stringify(form.rotationConfig.rules);
     resetPreview();
@@ -803,17 +768,47 @@ async function executeRotation() {
   }
 }
 
+async function undoRotation() {
+  if (!planLoaded.value || saving.value || playingPreview.value || isDirty.value || !form.rotationConfig.undo) return;
+  if (!window.confirm("撤销最近一次轮换，恢复轮换前的全部座位（包括空座），确定吗？")) return;
+  saving.value = true;
+  error.value = "";
+  message.value = "";
+  resetPreview();
+  try {
+    const plan = await saveSeatPlan({ ...form, expectedUpdatedAt: expectedUpdatedAt.value, operation: "undo" }, adminPassword.value);
+    expectedUpdatedAt.value = plan.updatedAt;
+    Object.assign(form, toEditablePlan(plan));
+    savedRules.value = JSON.stringify(form.rotationConfig.rules);
+    message.value = "已撤销最近一次轮换";
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : "撤销失败";
+  } finally {
+    saving.value = false;
+  }
+}
+
 watch(() => JSON.stringify(form.rotationConfig.rules), () => resetPreview());
 
 watch(
   () => [form.rows, form.columns, form.aisleAfterColumns.join(","), form.seats.length],
   () => {
-    form.rotationConfig = normalizeRotationConfig(form.rotationConfig);
     resetPreview();
   }
 );
 
 onBeforeRouteLeave(() => !isDirty.value || window.confirm("有尚未保存的轮换规则，确定离开吗？"));
+
+function onBeforeUnload(event: BeforeUnloadEvent) {
+  if (!authenticated.value || !isDirty.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+watch(() => authenticated.value && isDirty.value, (dirty) => {
+  if (dirty) window.addEventListener("beforeunload", onBeforeUnload);
+  else window.removeEventListener("beforeunload", onBeforeUnload);
+}, { flush: "sync" });
 
 onMounted(() => {
   if (authenticated.value) {
@@ -824,6 +819,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener("beforeunload", onBeforeUnload);
   stopPreview();
 });
 </script>
@@ -847,7 +843,20 @@ onUnmounted(() => {
       <span class="workspace-title__meta">{{ form.rotationConfig.rules.length }} 条规则</span>
     </div>
     <div v-if="loading" class="workspace-loading">正在加载轮换设置…</div>
+    <div v-else-if="!planLoaded" class="workspace-error" role="alert">
+      <p>{{ error || '座位表加载失败，已禁止轮换以保护原有数据。' }}</p>
+      <button class="workspace-btn" type="button" @click="loadPlan">重新加载</button>
+    </div>
     <div v-else class="workspace workspace--rotate">
+      <section v-if="needsReview" class="rotation-danger" role="alert">
+        <AlertTriangle :size="28" aria-hidden="true" />
+        <div>
+          <h2>危险：轮换规则需要重新核对</h2>
+          <p>布局变化可能让大组编号或座位位置指向错误目标，继续执行可能导致座位表损坏或混乱。</p>
+          <p>请逐条检查规则，确认无误后保存规则。核对完成前，已禁止执行轮换。</p>
+          <p v-if="invalidRules.length">有 {{ invalidRules.length }} 条规则无效，请修改或删除标红的规则；不会自动丢弃任何规则。</p>
+        </div>
+      </section>
       <aside class="workspace-sidebar">
         <section class="workspace-section">
           <h2>添加规则</h2>
@@ -862,11 +871,12 @@ onUnmounted(() => {
           <div class="rule-section-heading"><h2>执行顺序</h2><span>{{ form.rotationConfig.rules.length }} 步</span></div>
           <div class="rule-list">
             <div v-for="(rule, index) in form.rotationConfig.rules" :key="rule.id" class="rule-item"
-              :class="{ 'is-selected': selectedRuleId === rule.id }">
+              :class="{ 'is-selected': selectedRuleId === rule.id, 'rule-item--invalid': invalidRules.includes(rule) }">
               <span class="rule-item__number">{{ index + 1 }}.</span>
               <button class="rule-item__body" type="button" @click="selectedRuleId = rule.id">
                 <span class="rule-item__title">{{ ruleTitle(rule) }}</span>
                 <span class="rule-item__summary">{{ ruleSummary(rule) }}</span>
+                <span v-if="invalidRules.includes(rule)" class="text-red-700">规则无效，请检查参数</span>
               </button>
               <div class="rule-item__tools">
                 <button type="button" title="上移规则" aria-label="上移规则" :disabled="index === 0" @click="moveRule(rule.id, -1)"><ChevronUp :size="15" /></button>
@@ -902,10 +912,12 @@ onUnmounted(() => {
               <label class="workspace-field"><span>方向</span>
                 <select v-model="selectedRule.direction" class="workspace-input"><option value="forward">向后</option><option value="backward">向前</option></select>
               </label>
-              <label class="workspace-field"><span>步数</span>
-                <input v-model.number="selectedRule.steps" type="number" min="1" max="200" class="workspace-input" />
+              <label class="workspace-field"><span>移动排数</span>
+                <input v-model.number="selectedRule.steps" type="number" min="1" max="200" step="1" required
+                  :aria-invalid="!isValidCycleSteps(selectedRule.steps)" class="workspace-input" />
               </label>
             </div>
+            <p v-if="!isValidCycleSteps(selectedRule.steps)" class="workspace-error" role="alert">步数必须是 1–200 的整数。</p>
           </template>
           <template v-else>
             <label class="workspace-field"><span>位置 A</span>
@@ -930,7 +942,7 @@ onUnmounted(() => {
         </div>
         <div class="rule-preview__toolbar">
           <div class="workspace-button-row">
-            <button class="workspace-btn workspace-btn--primary" type="button" :disabled="!form.rotationConfig.rules.length || playingPreview" @click="playPreview">
+            <button class="workspace-btn workspace-btn--primary" type="button" :disabled="!form.rotationConfig.rules.length || playingPreview || saving || invalidRules.length > 0" @click="playPreview">
               <Play :size="15" />{{ previewButtonText() }}
             </button>
             <button class="workspace-btn" type="button" :disabled="previewRuleIndex < 0 && !playingPreview" @click="resetPreview">
@@ -963,14 +975,28 @@ onUnmounted(() => {
 
       <footer class="workspace-savebar">
         <span class="workspace-savebar__status">{{ isDirty ? '规则有尚未保存的修改' : message || '规则已保存' }}</span>
-        <button class="workspace-btn" type="button" :disabled="saving || !isDirty" @click="saveRules"><Save :size="15" />保存规则</button>
-        <button class="workspace-btn workspace-btn--primary" type="button" :disabled="saving || !form.rotationConfig.rules.length" @click="executeRotation"><Repeat2 :size="15" />执行轮换</button>
+        <button class="workspace-btn" type="button" :disabled="saving || playingPreview || isDirty || !form.rotationConfig.undo" @click="undoRotation"><Undo2 :size="15" />撤销一次轮换</button>
+        <button class="workspace-btn" type="button" :disabled="saving || playingPreview || invalidRules.length > 0 || (!isDirty && !needsReview)" @click="saveRules"><Save :size="15" />{{ needsReview ? '确认核对并保存' : '保存规则' }}</button>
+        <button class="workspace-btn workspace-btn--primary" type="button" :disabled="saving || playingPreview || isDirty || needsReview || !form.rotationConfig.rules.length" @click="executeRotation"><Repeat2 :size="15" />执行轮换</button>
       </footer>
     </div>
   </main>
 </template>
 
 <style scoped>
+.rotation-danger { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 16px; padding: 20px; border: 2px solid #dc2626; border-left-width: 8px; background: #fff1f2; color: #991b1b; }
+.rotation-danger > svg { flex-shrink: 0; }
+.rotation-danger h2 { margin: 0 0 8px; font-size: 20px; font-weight: 700; }
+.rotation-danger p { margin: 4px 0; line-height: 1.6; }
+.rule-item--invalid { border-left: 3px solid #dc2626; background: #fff1f2; }
+@media (max-width: 760px) {
+  .workspace--rotate { padding-bottom: 170px; }
+  .workspace-savebar { flex-wrap: wrap; }
+  .workspace-savebar__status { flex-basis: 100%; }
+  .workspace-savebar > button { flex: 1 1 140px; }
+  .rotation-danger { gap: 10px; padding: 14px; }
+  .rotation-danger h2 { font-size: 18px; }
+}
 .preview-unit-move {
   transition: transform 940ms cubic-bezier(0.22, 1, 0.36, 1);
 }

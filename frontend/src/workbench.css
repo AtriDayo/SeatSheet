@@ -575,6 +575,39 @@
 .workspace-aisle span {
   writing-mode: vertical-rl;
 }
+.workspace-line-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid #cbdcda;
+  border-radius: 4px;
+  background: #fff;
+  color: #55726f;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: grab;
+  user-select: none;
+  white-space: nowrap;
+}
+.workspace-line-handle--row {
+  align-self: center;
+  height: 32px;
+  padding: 0 3px;
+  border-color: transparent;
+  background: transparent;
+}
+.workspace-line-handle:hover,
+.workspace-line-handle:focus-visible,
+.workspace-line-handle.is-target {
+  border-color: #008b83;
+  background: #d2eee8;
+  color: #006f67;
+}
+.workspace-line-handle.is-dragged {
+  opacity: 0.5;
+}
 .workspace-pair-handle {
   display: flex;
   align-items: center;

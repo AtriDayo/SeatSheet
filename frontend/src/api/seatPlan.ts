@@ -23,7 +23,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const message = await response.text();
+    const body = await response.text();
+    let message = body;
+    try { message = JSON.parse(body).message ?? body; } catch { /* Non-JSON gateway errors. */ }
     throw new Error(message || `Request failed: ${response.status}`);
   }
 
@@ -41,7 +43,7 @@ export function verifyAdminPassword(password: string) {
   });
 }
 
-export function saveSeatPlan(plan: EditableSeatPlan, adminPassword: string) {
+export function saveSeatPlan(plan: EditableSeatPlan & { expectedUpdatedAt: string }, adminPassword: string) {
   return request<SeatPlan>("/api/seat-plan", {
     method: "PUT",
     headers: {

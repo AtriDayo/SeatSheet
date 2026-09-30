@@ -39,6 +39,8 @@ export type RotationRule =
 
 export interface RotationConfig {
   rules: RotationRule[];
+  reviewRequired?: boolean;
+  undo?: { beforeSeats: Seat[]; afterKey: string; layoutKey: string; executedRules: RotationRule[] } | null;
 }
 
 export interface SeatPlan {
@@ -56,6 +58,8 @@ export interface SeatPlan {
 }
 
 export interface EditableSeatPlan {
+  expectedUpdatedAt?: string;
+  operation?: "edit" | "rules" | "rotate" | "undo";
   name: string;
   rows: number;
   columns: number;

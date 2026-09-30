@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import { ArrowRight, Download, GripVertical, Save, Upload } from "@lucide/vue";
 import AdminHeader from "../components/AdminHeader.vue";
@@ -7,8 +7,16 @@ import AdminLogin from "../components/AdminLogin.vue";
 import { fetchSeatPlan, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
 import type { EditableSeatPlan, Seat } from "../types/seat";
 import { useAdminSession } from "../state/adminSession";
+import { deriveSeatGroups, deskPairColumnsForGroup } from "../utils/rotation";
+import { parseImportedSeatPlan } from "../utils/seatImport";
+import { swapSeatLines } from "../utils/seatSwap";
 
 const loading = ref(true);
+const planLoaded = ref(false);
+const expectedUpdatedAt = ref("");
+const draftRows = ref<number | string>(5);
+const draftColumns = ref<number | string>(6);
+const clippedSeats = new Map<string, Seat>();
 const saving = ref(false);
 const authenticating = ref(false);
 const loginPassword = ref("");
@@ -19,6 +27,10 @@ const draggedSeatKey = ref<string | null>(null);
 const dragOverSeatKey = ref<string | null>(null);
 const draggedPairKey = ref<string | null>(null);
 const dragOverPairKey = ref<string | null>(null);
+const draggedRow = ref<number | null>(null);
+const dragOverRow = ref<number | null>(null);
+const draggedColumn = ref<number | null>(null);
+const dragOverColumn = ref<number | null>(null);
 const { adminPassword, authenticated, setAdminPassword, clearAdminSession } = useAdminSession();
 
 const form = reactive<EditableSeatPlan>({
@@ -39,7 +51,27 @@ function planSnapshot() {
     showStudentNo: form.showStudentNo, rotationConfig: form.rotationConfig,
     seats: form.seats.map(({ row, column, name, studentNo }) => ({ row, column, name, studentNo })) });
 }
-const isDirty = computed(() => savedSnapshot.value !== "" && planSnapshot() !== savedSnapshot.value);
+const dimensionsDirty = computed(() => Number(draftRows.value) !== form.rows || Number(draftColumns.value) !== form.columns);
+const isDirty = computed(() => savedSnapshot.value !== "" && (planSnapshot() !== savedSnapshot.value || dimensionsDirty.value));
+
+function applyDimensions() {
+  const rows = Number(draftRows.value), columns = Number(draftColumns.value);
+  if (!Number.isInteger(rows) || rows < 1 || rows > 30 || !Number.isInteger(columns) || columns < 1 || columns > 30) {
+    error.value = "排数和列数必须是 1–30 的整数，座位名单未变动。";
+    return false;
+  }
+  if (!dimensionsDirty.value) return true;
+  const removed = form.seats.filter((seat) => (seat.row >= rows || seat.column >= columns) && (seat.name || seat.studentNo));
+  if (removed.length && !window.confirm(`缩小布局将移除 ${removed.length} 个已填写的座位。保存前恢复原行列数可以找回，确定调整吗？`)) return false;
+  form.seats.forEach((seat) => clippedSeats.set(seatKey(seat), { ...seat }));
+  form.rows = rows;
+  form.columns = columns;
+  form.seats = [...clippedSeats.values()];
+  normalizeSeats();
+  form.aisleAfterColumns = validAisleAfterColumns.value;
+  error.value = "";
+  return true;
+}
 
 const sortedSeats = computed(() =>
   [...form.seats].sort((a, b) => a.row - b.row || a.column - b.column)
@@ -58,8 +90,9 @@ const validAisleAfterColumns = computed(() =>
 const aisleColumnSet = computed(() => new Set(validAisleAfterColumns.value));
 
 const deskPairStartColumns = computed(() =>
-  Array.from({ length: form.columns }, (_, column) => column)
-    .filter((column) => column % 2 === 0 && column + 1 < form.columns && !aisleColumnSet.value.has(column))
+  deriveSeatGroups(form.columns, validAisleAfterColumns.value)
+    .flatMap(deskPairColumnsForGroup)
+    .map((columns) => columns[0])
 );
 
 const deskPairStartColumnSet = computed(() => new Set(deskPairStartColumns.value));
@@ -85,23 +118,29 @@ const configGridTemplateColumns = computed(() => {
     }
   }
 
-  return tracks.join(" ");
+  return ["3rem", ...tracks].join(" ");
 });
+
+const configGridTemplateRows = computed(() => `2rem repeat(${form.rows}, auto)`);
+
+function columnLabel(column: number) {
+  return column < 26 ? String.fromCharCode(65 + column) : `A${String.fromCharCode(65 + column - 26)}`;
+}
 
 function seatKey(seat: Pick<Seat, "row" | "column">) {
   return `${seat.row}:${seat.column}`;
 }
 
 function seatGridColumn(column: number) {
-  return column + 1 + insertedTrackColumnsBefore(column).length;
+  return column + 2 + insertedTrackColumnsBefore(column).length;
 }
 
 function aisleGridColumn(column: number) {
-  return column + 2 + insertedTrackColumnsBefore(column).length;
+  return column + 3 + insertedTrackColumnsBefore(column).length;
 }
 
 function deskPairHandleGridColumn(column: number) {
-  return column + 2 + insertedTrackColumnsBefore(column).length;
+  return column + 3 + insertedTrackColumnsBefore(column).length;
 }
 
 function insertedTrackColumnsBefore(column: number) {
@@ -125,10 +164,6 @@ function createEmptySeat(row: number, column: number): Seat {
   return { row, column, name: null, studentNo: null };
 }
 
-function normalizeText(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
 function normalizeSeats() {
   const seatByKey = new Map(form.seats.map((seat) => [`${seat.row}:${seat.column}`, seat]));
   const normalized: Seat[] = [];
@@ -144,13 +179,18 @@ function normalizeSeats() {
 
 async function loadPlan() {
   loading.value = true;
+  planLoaded.value = false;
   error.value = "";
 
   try {
     const plan = await fetchSeatPlan();
+    expectedUpdatedAt.value = plan.updatedAt;
+    clippedSeats.clear();
     form.name = plan.name;
     form.rows = plan.rows;
     form.columns = plan.columns;
+    draftRows.value = plan.rows;
+    draftColumns.value = plan.columns;
     form.doorSide = plan.doorSide;
     form.aisleAfterColumns = plan.aisleAfterColumns ?? [];
     form.showStudentNo = plan.showStudentNo ?? true;
@@ -164,6 +204,7 @@ async function loadPlan() {
     normalizeSeats();
     await nextTick();
     savedSnapshot.value = planSnapshot();
+    planLoaded.value = true;
   } catch (err) {
     error.value = err instanceof Error ? err.message : "加载失败";
   } finally {
@@ -194,6 +235,7 @@ function leaveAdmin() {
   form.seats = [];
   clearSeatDrag();
   clearPairDrag();
+  clearLineDrag();
   message.value = "";
   error.value = "";
 }
@@ -208,6 +250,34 @@ function clearPairDrag() {
   dragOverPairKey.value = null;
 }
 
+function clearLineDrag() {
+  draggedRow.value = null;
+  dragOverRow.value = null;
+  draggedColumn.value = null;
+  dragOverColumn.value = null;
+}
+
+function startLineDrag(axis: "row" | "column", index: number, event: DragEvent) {
+  clearSeatDrag();
+  clearPairDrag();
+  clearLineDrag();
+  if (axis === "row") draggedRow.value = index;
+  else draggedColumn.value = index;
+  event.dataTransfer?.setData("text/plain", `${axis}:${index}`);
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+}
+
+function setLineDragTarget(axis: "row" | "column", index: number) {
+  if (axis === "row") dragOverRow.value = draggedRow.value !== null && draggedRow.value !== index ? index : null;
+  else dragOverColumn.value = draggedColumn.value !== null && draggedColumn.value !== index ? index : null;
+}
+
+function dropOnLine(axis: "row" | "column", index: number) {
+  const source = axis === "row" ? draggedRow.value : draggedColumn.value;
+  if (source !== null && source !== index) swapSeatLines(form.seats, axis, source, index);
+  clearLineDrag();
+}
+
 function findSeatByKey(key: string | null) {
   if (!key) {
     return undefined;
@@ -218,6 +288,7 @@ function findSeatByKey(key: string | null) {
 
 function startSeatDrag(seat: Seat, event: DragEvent) {
   clearPairDrag();
+  clearLineDrag();
   draggedSeatKey.value = seatKey(seat);
   dragOverSeatKey.value = null;
   event.dataTransfer?.setData("text/plain", draggedSeatKey.value);
@@ -321,6 +392,7 @@ function isSeatInPair(seat: Seat, key: string | null) {
 
 function startPairDrag(row: number, startColumn: number, event: DragEvent) {
   clearSeatDrag();
+  clearLineDrag();
   draggedPairKey.value = pairKey(row, startColumn);
   dragOverPairKey.value = null;
   event.dataTransfer?.setData("text/plain", draggedPairKey.value);
@@ -402,45 +474,11 @@ async function importJson(event: Event) {
   }
 
   try {
-    const payload = JSON.parse(await file.text()) as Partial<EditableSeatPlan>;
-    const rows = Number(payload.rows);
-    const columns = Number(payload.columns);
-
-    if (!Number.isInteger(rows) || rows < 1 || rows > 30 || !Number.isInteger(columns) || columns < 1 || columns > 30) {
-      throw new Error("JSON 中的行列数不正确");
-    }
-
-    form.name = typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : "导入座位表";
-    form.rows = rows;
-    form.columns = columns;
-    form.doorSide = payload.doorSide === "left" ? "left" : "right";
-    form.aisleAfterColumns = Array.isArray(payload.aisleAfterColumns)
-      ? payload.aisleAfterColumns
-          .map(Number)
-          .filter((column) => Number.isInteger(column) && column >= 0 && column < columns - 1)
-      : [];
-    form.showStudentNo = payload.showStudentNo !== false;
-    form.rotationConfig = payload.rotationConfig && Array.isArray(payload.rotationConfig.rules)
-      ? payload.rotationConfig
-      : { rules: [] };
-    form.seats = Array.isArray(payload.seats)
-      ? payload.seats
-          .map((seat) => ({
-            row: Number(seat.row),
-            column: Number(seat.column),
-            name: normalizeText(seat.name),
-            studentNo: normalizeText(seat.studentNo)
-          }))
-          .filter((seat) =>
-            Number.isInteger(seat.row) &&
-            seat.row >= 0 &&
-            seat.row < rows &&
-            Number.isInteger(seat.column) &&
-            seat.column >= 0 &&
-            seat.column < columns
-          )
-      : [];
-    normalizeSeats();
+    const imported = parseImportedSeatPlan(await file.text());
+    Object.assign(form, imported);
+    draftRows.value = imported.rows;
+    draftColumns.value = imported.columns;
+    clippedSeats.clear();
     message.value = "已导入，保存后生效";
     error.value = "";
   } catch (err) {
@@ -450,12 +488,15 @@ async function importJson(event: Event) {
 }
 
 async function submit() {
+  if (!planLoaded.value || saving.value || !applyDimensions()) return;
   saving.value = true;
   error.value = "";
   message.value = "";
 
   try {
     const plan = await saveSeatPlan({
+      expectedUpdatedAt: expectedUpdatedAt.value,
+      operation: "edit",
       name: form.name,
       rows: Number(form.rows),
       columns: Number(form.columns),
@@ -465,9 +506,13 @@ async function submit() {
       rotationConfig: form.rotationConfig,
       seats: form.seats
     }, adminPassword.value);
+    expectedUpdatedAt.value = plan.updatedAt;
+    clippedSeats.clear();
     form.name = plan.name;
     form.rows = plan.rows;
     form.columns = plan.columns;
+    draftRows.value = plan.rows;
+    draftColumns.value = plan.columns;
     form.doorSide = plan.doorSide;
     form.aisleAfterColumns = plan.aisleAfterColumns ?? [];
     form.showStudentNo = plan.showStudentNo ?? true;
@@ -486,13 +531,24 @@ async function submit() {
 watch(
   () => [form.rows, form.columns],
   () => {
-    normalizeSeats();
-
-    form.aisleAfterColumns = validAisleAfterColumns.value;
+    draftRows.value = form.rows;
+    draftColumns.value = form.columns;
   }
 );
 
 onBeforeRouteLeave(() => !isDirty.value || window.confirm("有尚未保存的座位修改，确定离开吗？"));
+
+function onBeforeUnload(event: BeforeUnloadEvent) {
+  if (!authenticated.value || !isDirty.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+watch(() => authenticated.value && isDirty.value, (dirty) => {
+  if (dirty) window.addEventListener("beforeunload", onBeforeUnload);
+  else window.removeEventListener("beforeunload", onBeforeUnload);
+}, { flush: "sync" });
+onUnmounted(() => window.removeEventListener("beforeunload", onBeforeUnload));
 
 onMounted(() => {
   if (authenticated.value) {
@@ -523,6 +579,10 @@ onMounted(() => {
     </div>
 
     <div v-if="loading" class="workspace-loading">正在加载座位表…</div>
+    <div v-else-if="!planLoaded" class="workspace-error" role="alert">
+      <p>{{ error || '座位表加载失败，已停止编辑以保护原有数据。' }}</p>
+      <button class="workspace-btn" type="button" @click="loadPlan">重新加载</button>
+    </div>
     <form v-else class="workspace workspace--config" @submit.prevent="submit">
       <aside class="workspace-sidebar">
         <section class="workspace-section">
@@ -534,13 +594,14 @@ onMounted(() => {
           <div class="workspace-field-row">
             <label class="workspace-field">
               <span>排数</span>
-              <input v-model.number="form.rows" class="workspace-input" type="number" min="1" max="30" />
+              <input v-model.number="draftRows" class="workspace-input" type="number" min="1" max="30" />
             </label>
             <label class="workspace-field">
               <span>列数</span>
-              <input v-model.number="form.columns" class="workspace-input" type="number" min="1" max="30" />
+              <input v-model.number="draftColumns" class="workspace-input" type="number" min="1" max="30" />
             </label>
           </div>
+          <button v-if="dimensionsDirty" class="workspace-btn" type="button" @click="applyDimensions">应用布局</button>
         </section>
 
         <section class="workspace-section">
@@ -594,14 +655,37 @@ onMounted(() => {
             <div v-if="form.doorSide === 'left'" class="workspace-door">
               <span>前门</span><i /><span>后门</span>
             </div>
-            <div class="grid gap-2" :style="{ gridTemplateColumns: configGridTemplateColumns }">
+            <div class="grid gap-2" :style="{ gridTemplateColumns: configGridTemplateColumns, gridTemplateRows: configGridTemplateRows }">
+              <button v-for="column in form.columns" :key="`column:${column}`" type="button"
+                class="workspace-line-handle" :class="{ 'is-target': dragOverColumn === column - 1, 'is-dragged': draggedColumn === column - 1 }"
+                :style="{ gridColumn: seatGridColumn(column - 1), gridRow: 1 }"
+                draggable="true" :title="`拖动以交换整列：${columnLabel(column - 1)} 列`"
+                :aria-label="`拖动以交换第 ${column} 列`"
+                @dragstart="startLineDrag('column', column - 1, $event)"
+                @dragenter.prevent="setLineDragTarget('column', column - 1)"
+                @dragover.prevent="setLineDragTarget('column', column - 1)"
+                @drop.prevent="dropOnLine('column', column - 1)" @dragend="clearLineDrag">
+                <GripVertical :size="12" aria-hidden="true" />{{ columnLabel(column - 1) }} 列
+              </button>
+              <button v-for="row in form.rows" :key="`row:${row}`" type="button"
+                class="workspace-line-handle workspace-line-handle--row"
+                :class="{ 'is-target': dragOverRow === row - 1, 'is-dragged': draggedRow === row - 1 }"
+                :style="{ gridColumn: 1, gridRow: row + 1 }"
+                draggable="true" :title="`拖动以交换整排：第 ${row} 排`"
+                :aria-label="`拖动以交换第 ${row} 排`"
+                @dragstart="startLineDrag('row', row - 1, $event)"
+                @dragenter.prevent="setLineDragTarget('row', row - 1)"
+                @dragover.prevent="setLineDragTarget('row', row - 1)"
+                @drop.prevent="dropOnLine('row', row - 1)" @dragend="clearLineDrag">
+                <GripVertical :size="12" aria-hidden="true" />{{ row }} 排
+              </button>
               <div v-for="column in validAisleAfterColumns" :key="`aisle:${column}`" class="workspace-aisle"
-                :style="{ gridColumn: aisleGridColumn(column), gridRow: `1 / span ${form.rows}` }">
+                :style="{ gridColumn: aisleGridColumn(column), gridRow: `2 / span ${form.rows}` }">
                 <span>过道</span>
               </div>
               <button v-for="pair in deskPairHandles" :key="`pair:${pair.row}:${pair.startColumn}`"
                 class="workspace-pair-handle" :class="{ 'is-target': isPairDragTarget(pair.row, pair.startColumn) }"
-                :style="{ gridColumn: deskPairHandleGridColumn(pair.startColumn), gridRow: pair.row + 1 }"
+                :style="{ gridColumn: deskPairHandleGridColumn(pair.startColumn), gridRow: pair.row + 2 }"
                 draggable="true" title="拖动以交换同桌" :aria-label="`交换第 ${pair.row + 1} 排第 ${pair.startColumn + 1}-${pair.startColumn + 2} 列的同桌`" type="button"
                 @dragstart="startPairDrag(pair.row, pair.startColumn, $event)"
                 @dragenter.prevent="setPairDragTarget(pair.row, pair.startColumn)"
@@ -610,9 +694,9 @@ onMounted(() => {
                 <GripVertical :size="14" />
               </button>
               <div v-for="seat in sortedSeats" :key="seatKey(seat)" class="editor-seat"
-                :class="{ 'is-target': dragOverSeatKey === seatKey(seat) || isSeatInPair(seat, dragOverPairKey),
-                  'is-dragged': draggedSeatKey === seatKey(seat) || isSeatInPair(seat, draggedPairKey) }"
-                :style="{ gridColumn: seatGridColumn(seat.column), gridRow: seat.row + 1 }"
+                :class="{ 'is-target': dragOverSeatKey === seatKey(seat) || isSeatInPair(seat, dragOverPairKey) || dragOverRow === seat.row || dragOverColumn === seat.column,
+                  'is-dragged': draggedSeatKey === seatKey(seat) || isSeatInPair(seat, draggedPairKey) || draggedRow === seat.row || draggedColumn === seat.column }"
+                :style="{ gridColumn: seatGridColumn(seat.column), gridRow: seat.row + 2 }"
                 @dragenter.prevent="setSeatDragTarget(seat)" @dragover.prevent="setSeatDragTarget(seat)"
                 @drop.prevent="dropOnSeat(seat)">
                 <div class="editor-seat__handle" draggable="true" title="拖动以交换座位"

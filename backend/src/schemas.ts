@@ -42,6 +42,8 @@ export const rotationConfigSchema = z.object({
 });
 
 export const planUpdateSchema = z.object({
+  expectedUpdatedAt: z.string().datetime(),
+  operation: z.enum(["edit", "rules", "rotate", "undo"]).default("edit"),
   name: z.string().trim().min(1).max(80),
   rows: z.number().int().min(1).max(30),
   columns: z.number().int().min(1).max(30),

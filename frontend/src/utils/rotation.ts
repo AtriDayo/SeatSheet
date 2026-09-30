@@ -40,7 +40,7 @@ function cyclicIndex(length: number, current: number) {
   return ((current % length) + length) % length;
 }
 
-function deskPairColumnsForGroup(group: SeatGroup) {
+export function deskPairColumnsForGroup(group: SeatGroup) {
   const pairs: number[][] = [];
 
   for (let index = 0; index < group.columns.length; index += 2) {
@@ -52,6 +52,21 @@ function deskPairColumnsForGroup(group: SeatGroup) {
   }
 
   return pairs;
+}
+
+export function cycleColumnsForGroup(group: SeatGroup) {
+  const columns = deskPairColumnsForGroup(group);
+  if (group.width % 2 !== 0) columns.push([group.endColumn]);
+  return columns;
+}
+
+export function isValidCycleSteps(steps: unknown): steps is number {
+  return typeof steps === "number" && Number.isInteger(steps) && steps >= 1 && steps <= 200;
+}
+
+export function cycleTargetRow(row: number, rows: number, rule: Extract<RotationRule, { type: "groupCycle" }>) {
+  const shift = rule.direction === "forward" ? rule.steps : -rule.steps;
+  return cyclicIndex(rows, row + shift);
 }
 
 export function deriveSeatGroups(columns: number, aisleAfterColumns: number[]) {
@@ -143,38 +158,22 @@ function applyGroupCycleRule(
   const group = groups.find((item) => item.index === rule.groupIndex);
   const nextSeats = sortSeats(seats).map(cloneSeat);
 
-  if (!group) {
+  if (!group || !isValidCycleSteps(rule.steps)) {
     return nextSeats;
   }
 
   const map = seatMap(nextSeats);
-  const groupPairs = Array.from({ length: Math.max(...nextSeats.map((seat) => seat.row), 0) + 1 }, (_, row) =>
-    deskPairColumnsForGroup(group)
-      .map((columns) => columns.map((column) => map.get(seatKey(row, column))).filter((seat): seat is Seat => Boolean(seat)))
-      .filter((pair) => pair.length > 0)
-  ).flat();
-
-  if (groupPairs.length <= 1) {
-    return nextSeats;
+  const rows = Math.max(...nextSeats.map((seat) => seat.row), 0) + 1;
+  const columns = new Set(group.columns);
+  // Read original payloads, moving the whole group's row without changing columns.
+  for (const seat of seats) {
+    if (!columns.has(seat.column)) continue;
+    const target = map.get(seatKey(cycleTargetRow(seat.row, rows, rule), seat.column));
+    if (target) {
+      target.name = seat.name;
+      target.studentNo = seat.studentNo;
+    }
   }
-
-  const payloads = groupPairs.map((pair) =>
-    pair.map((seat) => ({
-      name: seat.name,
-      studentNo: seat.studentNo
-    }))
-  );
-  const step = rule.direction === "forward" ? rule.steps : -rule.steps;
-
-  groupPairs.forEach((pair, index) => {
-    const payload = payloads[cyclicIndex(groupPairs.length, index - step)];
-
-    pair.forEach((seat, seatIndex) => {
-      const seatPayload = payload[seatIndex] ?? { name: null, studentNo: null };
-      seat.name = seatPayload.name;
-      seat.studentNo = seatPayload.studentNo;
-    });
-  });
 
   return nextSeats;
 }
