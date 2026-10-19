@@ -7,6 +7,18 @@ SeatSheet is a minimal seat chart display and management app.
 - Database: PostgreSQL
 - Recommended deployment: pull prebuilt Docker images and run them with Docker Compose.
 
+## Print a seating chart
+
+In the management page (`/config`), use **打印座位表** next to the **座位编辑** heading.
+The preview uses the teacher's view: the front row is at the bottom, left/right positions
+are reversed, and names remain upright. Doors and aisles follow the same orientation.
+Student numbers follow the editor's display setting.
+
+Printing uses a white A4 landscape page with 20 mm margins on all four sides.
+In the browser print dialog, keep A4, landscape and 100% scale, and turn off headers
+and footers. You can also save as PDF. Printing includes the current editing snapshot
+and does not save changes to the server; unapplied row/column changes must be applied first.
+
 ## Recommended Deployment
 
 Use this path for VPS deployment. It avoids running `npm install` and image builds on a small VPS.
@@ -31,7 +43,7 @@ Edit `deploy/.env.prod` before the first `up`. Keep `DOCKER_IMAGE_NAMESPACE=atri
 The app listens on `127.0.0.1:8080` from the VPS perspective. Put Caddy or Nginx in front of it for HTTPS:
 
 ```caddyfile
-seats.atridayo.com {
+seats.example.com {
   reverse_proxy 127.0.0.1:8080
 }
 ```
@@ -110,8 +122,8 @@ The configuration page is available at `http://localhost:5173/config`.
 
 Recommended first version:
 
-- Display: `https://seats.atridayo.com/`
-- Config: `https://seats.atridayo.com/config`
+- Display: `https://seats.example.com/`
+- Config: `https://seats.example.com/config`
 
 You can later split config to `https://seats-config.atridayo.com/` by adding another Nginx server block that points to the same frontend build and rewrites to `/config`.
 

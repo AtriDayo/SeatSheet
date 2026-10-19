@@ -1,0 +1,53 @@
+.workspace-title__actions { display:flex; align-items:center; flex-wrap:wrap; gap:14px; }
+.seat-print-overlay { position:fixed; inset:0; z-index:200; display:grid; place-items:center; padding:20px; background:#10232b99; }
+.seat-print-dialog { width:min(1120px,100%); max-height:calc(100dvh - 40px); display:flex; flex-direction:column; overflow:hidden; border:1px solid #dce5e5; border-radius:12px; background:#fff; color:#17272e; font-family:Inter,"Microsoft YaHei",sans-serif; }
+.seat-print-toolbar { display:flex; justify-content:space-between; align-items:center; gap:14px; padding:18px 24px; }
+.seat-print-toolbar h2 { margin:0; font-size:20px; font-weight:600; }
+.seat-print-toolbar p { margin:5px 0 0; color:#667b82; font-size:13px; }
+.seat-print-options { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:10px 24px; border-top:1px solid #dce5e5; font-size:12px; }
+.seat-print-options label { display:flex; align-items:center; gap:7px; }
+.seat-print-options input { accent-color:#08796f; width:16px; height:16px; }
+.seat-print-draft { color:#915f19; }
+.seat-print-preview { min-height:0; overflow:auto; padding:20px; background:#e9eff0; }
+.seat-print-stage { position:relative; margin:auto; width:100%; }
+.seat-print-paper { box-sizing:border-box; position:absolute; top:0; left:0; width:297mm; height:210mm; padding:20mm; background:#fff; color:#111; transform-origin:top left; box-shadow:0 2px 12px #10232b15; font-family:"Microsoft YaHei","Noto Sans SC",sans-serif; }
+.seat-print-paper.has-guides::after { content:""; position:absolute; inset:20mm; border:1px dashed #aaa; pointer-events:none; }
+.seat-print-layout { display:flex; flex-direction:column; height:calc(100% - 1mm); margin:.5mm; gap:2mm; }
+.seat-print-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:5mm; padding-bottom:2mm; }
+.seat-print-heading h1 { min-width:0; margin:0; font-weight:600; line-height:1.25; overflow-wrap:anywhere; }
+.seat-print-heading p { flex-shrink:0; margin:1mm 0 0; font-size:10pt; line-height:1.4; white-space:nowrap; }
+.seat-print-rear { flex-shrink:0; text-align:center; font-size:10pt; line-height:1.4; }
+.seat-print-classroom { display:flex; flex:1; min-height:0; gap:2mm; }
+.seat-print-classroom.door-right { flex-direction:row-reverse; }
+.seat-print-doors { display:flex; flex-direction:column; justify-content:space-between; align-items:center; flex:0 0 7mm; padding:1mm 0; }
+.seat-print-doors span { writing-mode:vertical-rl; font-size:10pt; line-height:1.1; letter-spacing:1mm; }
+.seat-print-grid { display:grid; flex:1; min-width:0; min-height:0; }
+.seat-print-aisle { border-left:.2mm solid #ccc; justify-self:center; width:0; }
+.seat-print-cell { display:flex; flex-direction:column; justify-content:center; align-items:center; min-width:0; min-height:0; border:.2mm solid #888; border-radius:.5mm; background:#fff; }
+.seat-print-name { white-space:nowrap; font-size:18pt; line-height:1.2; font-weight:500; }
+.seat-print-number { white-space:nowrap; font-size:10pt; line-height:1.2; }
+.seat-print-platform { width:46%; align-self:center; text-align:center; flex-shrink:0; border:.25mm solid #555; border-radius:.5mm; padding:1.5mm 2mm; font-size:11pt; line-height:1.2; }
+.seat-print-actions { padding:14px 24px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.seat-print-actions p { margin:0; font-size:12px; line-height:1.6; }
+.seat-print-actions button { flex-shrink:0; }
+.seat-print-dialog button:focus-visible,.seat-print-dialog input:focus-visible { outline:2px solid #008b83; outline-offset:3px; }
+@media(max-width:600px) {
+  .seat-print-overlay { padding:8px; }
+  .seat-print-dialog { max-height:calc(100dvh - 16px); }
+  .seat-print-toolbar,.seat-print-options,.seat-print-actions { padding:12px; }
+  .seat-print-actions { align-items:stretch; flex-direction:column; }
+  .seat-print-preview { padding:10px; }
+}
+@page seatsheet { size:A4 landscape; margin:20mm; }
+@media print {
+  :root { background:#fff!important; }
+  body.seat-print-open { margin:0!important; padding:0!important; min-width:0!important; min-height:0!important; overflow:visible!important; background:#fff!important; }
+  body.seat-print-open > :not(.seat-print-overlay) { display:none!important; }
+  .seat-print-overlay { display:block; position:static; padding:0; background:#fff; }
+  .seat-print-dialog { display:block; width:auto; max-height:none; overflow:visible; border:0; border-radius:0; background:#fff; }
+  .seat-print-toolbar,.seat-print-options,.seat-print-actions { display:none!important; }
+  .seat-print-preview { display:block; padding:0; overflow:visible; background:#fff; }
+  .seat-print-stage { width:auto; height:auto!important; }
+  .seat-print-paper { page:seatsheet; position:static; transform:none!important; width:257mm; height:169.5mm; padding:0; margin:0; box-shadow:none; break-inside:avoid; }
+  .seat-print-paper::after { display:none!important; }
+}

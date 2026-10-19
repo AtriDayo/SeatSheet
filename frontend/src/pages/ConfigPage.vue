@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
-import { ArrowRight, Download, GripVertical, Save, Upload } from "@lucide/vue";
+import { ArrowRight, Download, GripVertical, Printer, Save, Upload } from "@lucide/vue";
 import AdminHeader from "../components/AdminHeader.vue";
 import AdminLogin from "../components/AdminLogin.vue";
+import SeatPrintDialog from "../components/SeatPrintDialog.vue";
 import { fetchSeatPlan, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
 import type { EditableSeatPlan, Seat } from "../types/seat";
 import { useAdminSession } from "../state/adminSession";
@@ -18,6 +19,8 @@ const draftRows = ref<number | string>(5);
 const draftColumns = ref<number | string>(6);
 const clippedSeats = new Map<string, Seat>();
 const saving = ref(false);
+const printPlan = ref<EditableSeatPlan | null>(null);
+const printDraft = ref(false);
 const authenticating = ref(false);
 const loginPassword = ref("");
 const message = ref("");
@@ -53,6 +56,12 @@ function planSnapshot() {
 }
 const dimensionsDirty = computed(() => Number(draftRows.value) !== form.rows || Number(draftColumns.value) !== form.columns);
 const isDirty = computed(() => savedSnapshot.value !== "" && (planSnapshot() !== savedSnapshot.value || dimensionsDirty.value));
+
+function openPrintPreview() {
+  if (!planLoaded.value || loading.value || saving.value || dimensionsDirty.value) return;
+  printDraft.value = isDirty.value;
+  printPlan.value = JSON.parse(planSnapshot()) as EditableSeatPlan;
+}
 
 function applyDimensions() {
   const rows = Number(draftRows.value), columns = Number(draftColumns.value);
@@ -575,7 +584,13 @@ onMounted(() => {
         </div>
         <p>管理班级布局与座位名单</p>
       </div>
-      <span class="workspace-title__meta">{{ form.rows }} 排 · {{ form.columns }} 列 · {{ form.seats.length }} 座</span>
+      <div class="workspace-title__actions">
+        <span class="workspace-title__meta">{{ form.rows }} 排 · {{ form.columns }} 列 · {{ form.seats.length }} 座</span>
+        <button class="workspace-btn" type="button" :disabled="!planLoaded || loading || saving || dimensionsDirty"
+          :title="dimensionsDirty ? '请先应用布局后打印' : '按讲台视角打印 A4 座位表'" @click="openPrintPreview">
+          <Printer :size="16" aria-hidden="true" />打印座位表
+        </button>
+      </div>
     </div>
 
     <div v-if="loading" class="workspace-loading">正在加载座位表…</div>
@@ -722,4 +737,5 @@ onMounted(() => {
       </footer>
     </form>
   </main>
+  <SeatPrintDialog v-if="authenticated && printPlan" :plan="printPlan" :draft="printDraft" @close="printPlan = null" />
 </template>
