@@ -28,18 +28,22 @@ onMounted(loadPlan);
 
 <template>
   <main class="display-page">
-    <header class="display-header">
-      <div class="display-brand"><strong>SeatSheet</strong></div>
-      <div class="display-header__actions">
-        <button type="button" title="刷新座位表" aria-label="刷新座位表" @click="loadPlan"><RefreshCw :size="18" /></button>
-        <RouterLink to="/config"><Settings2 :size="17" />管理座位</RouterLink>
-      </div>
-    </header>
-    <section class="display-content">
-      <div class="display-heading">
-        <div><span class="display-eyebrow">当前座位表</span><h1>{{ plan?.name || "座位表" }}</h1></div>
-        <div v-if="plan" class="display-stats"><span>{{ plan.rows }} 排 × {{ plan.columns }} 列</span><span>{{ occupiedSeats }} / {{ plan.seats.length }} 已安排</span></div>
-      </div>
+    <div class="display-content">
+      <header class="display-heading">
+        <div class="display-title">
+          <h1>{{ plan?.name || "座位表" }}</h1>
+          <p v-if="plan" class="display-stats">
+            <span>{{ plan.rows }} 排 × {{ plan.columns }} 列</span>
+            <span>已安排 {{ occupiedSeats }} / {{ plan.seats.length }} 座</span>
+          </p>
+        </div>
+        <div class="display-actions">
+          <button type="button" title="刷新座位表" aria-label="刷新座位表" :disabled="loading" @click="loadPlan">
+            <RefreshCw :size="17" aria-hidden="true" />
+          </button>
+          <RouterLink to="/config"><Settings2 :size="16" aria-hidden="true" />管理座位</RouterLink>
+        </div>
+      </header>
       <div v-if="loading" class="display-loading">正在加载座位表…</div>
       <div v-else-if="error" class="display-loading display-loading--error">{{ error }}</div>
       <div v-else-if="plan" class="display-board">
@@ -47,6 +51,6 @@ onMounted(loadPlan);
         <SeatGrid :rows="plan.rows" :columns="plan.columns" :door-side="plan.doorSide"
           :aisle-after-columns="plan.aisleAfterColumns" :show-student-no="plan.showStudentNo" :seats="plan.seats" />
       </div>
-    </section>
+    </div>
   </main>
 </template>

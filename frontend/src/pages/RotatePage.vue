@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
-import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, Play, Plus, Repeat2, RotateCcw, Save, Trash2, Undo2 } from "@lucide/vue";
+import { AlertTriangle, ChevronDown, ChevronUp, Play, Plus, Repeat2, RotateCcw, Save, Trash2, Undo2 } from "@lucide/vue";
 import AdminHeader from "../components/AdminHeader.vue";
 import AdminLogin from "../components/AdminLogin.vue";
-import { fetchSeatPlan, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
+import { fetchSeatPlan, lastConfirmedPlanName, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
 import { useAdminSession } from "../state/adminSession";
 import type {
   EditableSeatPlan,
@@ -60,15 +60,22 @@ const form = reactive<EditableSeatPlan>({
 const groups = computed(() => deriveSeatGroups(form.columns, form.aisleAfterColumns));
 const selectedRule = computed(() => form.rotationConfig.rules.find((rule) => rule.id === selectedRuleId.value) ?? null);
 const isDirty = computed(() => savedRules.value !== "" && JSON.stringify(form.rotationConfig.rules) !== savedRules.value);
-const invalidRules = computed(() => form.rotationConfig.rules.filter((rule) => {
+function ruleIssue(rule: RotationRule): string {
   if (rule.type === "groupSwap") {
-    const source = groups.value[rule.sourceGroupIndex], target = groups.value[rule.targetGroupIndex];
-    return !source || !target || source === target || source.width !== target.width;
+    const source = groups.value[rule.sourceGroupIndex];
+    const target = groups.value[rule.targetGroupIndex];
+    if (!source || !target) return "请选择当前布局中的两个大组";
+    if (source === target) return "请选择两个不同的大组";
+    return source.width === target.width ? "" : "两组列数不同，请选择等宽的大组";
   }
-  if (rule.type === "groupCycle") return !groups.value[rule.groupIndex] || !isValidCycleSteps(rule.steps);
-  return !form.seats.some((seat) => seat.row === rule.sourceRow && seat.column === rule.sourceColumn) ||
-    !form.seats.some((seat) => seat.row === rule.targetRow && seat.column === rule.targetColumn);
-}));
+  if (rule.type === "groupCycle") {
+    if (!groups.value[rule.groupIndex]) return "请重新选择轮换大组";
+    return isValidCycleSteps(rule.steps) ? "" : "移动排数须为 1–200 的整数";
+  }
+  const exists = (row: number, column: number) => form.seats.some((seat) => seat.row === row && seat.column === column);
+  return exists(rule.sourceRow, rule.sourceColumn) && exists(rule.targetRow, rule.targetColumn) ? "" : "请重新选择布局内的两个座位";
+}
+const invalidRules = computed(() => form.rotationConfig.rules.filter((rule) => ruleIssue(rule)));
 const needsReview = computed(() => Boolean(form.rotationConfig.reviewRequired) || invalidRules.value.length > 0);
 const validPreviewConfig = computed(() => ({ rules: form.rotationConfig.rules.filter((rule) => !invalidRules.value.includes(rule)) }));
 function ruleTitle(rule: RotationRule) {
@@ -273,6 +280,7 @@ async function authenticate() {
 function leaveAdmin() {
   if (isDirty.value && !window.confirm("有尚未保存的轮换规则，确定退出管理吗？")) return;
   clearAdminSession();
+  savedRules.value = "";
   loginPassword.value = "";
   form.seats = [];
   form.rotationConfig = { rules: [] };
@@ -829,19 +837,9 @@ onUnmounted(() => {
     :busy="authenticating" :error="error" @submit="authenticate" />
 
   <main v-else class="admin-page">
-    <AdminHeader :name="form.name" :dirty="isDirty" @logout="leaveAdmin" />
-    <div class="workspace-title">
-      <div>
-        <div class="workspace-title__heading">
-          <h1>轮换规则</h1>
-          <RouterLink class="workspace-title__link" to="/config">
-            <ArrowLeft :size="15" aria-hidden="true" /> 座位编辑
-          </RouterLink>
-        </div>
-        <p>按顺序设置规则，随时查看座位变化</p>
-      </div>
-      <span class="workspace-title__meta">{{ form.rotationConfig.rules.length }} 条规则</span>
-    </div>
+    <AdminHeader :name="planLoaded ? form.name : lastConfirmedPlanName" :dirty="isDirty" @logout="leaveAdmin">
+      <template #summary><span v-if="planLoaded" class="workspace-title__meta">{{ form.rotationConfig.rules.length }} 条规则</span></template>
+    </AdminHeader>
     <div v-if="loading" class="workspace-loading">正在加载轮换设置…</div>
     <div v-else-if="!planLoaded" class="workspace-error" role="alert">
       <p>{{ error || '座位表加载失败，已禁止轮换以保护原有数据。' }}</p>
@@ -849,12 +847,11 @@ onUnmounted(() => {
     </div>
     <div v-else class="workspace workspace--rotate">
       <section v-if="needsReview" class="rotation-danger" role="alert">
-        <AlertTriangle :size="28" aria-hidden="true" />
+        <AlertTriangle :size="20" aria-hidden="true" />
         <div>
-          <h2>危险：轮换规则需要重新核对</h2>
-          <p>布局变化可能让大组编号或座位位置指向错误目标，继续执行可能导致座位表损坏或混乱。</p>
-          <p>请逐条检查规则，确认无误后保存规则。核对完成前，已禁止执行轮换。</p>
-          <p v-if="invalidRules.length">有 {{ invalidRules.length }} 条规则无效，请修改或删除标红的规则；不会自动丢弃任何规则。</p>
+          <h2>轮换已暂停，规则待核对</h2>
+          <p v-if="invalidRules.length">请修正列表中标出的 {{ invalidRules.length }} 条规则，再确认核对并保存。</p>
+          <p v-else>教室布局已变化，请逐条核对规则并保存后执行。</p>
         </div>
       </section>
       <aside class="workspace-sidebar">
@@ -876,7 +873,7 @@ onUnmounted(() => {
               <button class="rule-item__body" type="button" @click="selectedRuleId = rule.id">
                 <span class="rule-item__title">{{ ruleTitle(rule) }}</span>
                 <span class="rule-item__summary">{{ ruleSummary(rule) }}</span>
-                <span v-if="invalidRules.includes(rule)" class="text-red-700">规则无效，请检查参数</span>
+                <span v-if="invalidRules.includes(rule)" class="text-red-700">{{ ruleIssue(rule) }}</span>
               </button>
               <div class="rule-item__tools">
                 <button type="button" title="上移规则" aria-label="上移规则" :disabled="index === 0" @click="moveRule(rule.id, -1)"><ChevronUp :size="15" /></button>
@@ -974,7 +971,7 @@ onUnmounted(() => {
       </section>
 
       <footer class="workspace-savebar">
-        <span class="workspace-savebar__status">{{ isDirty ? '规则有尚未保存的修改' : message || '规则已保存' }}</span>
+        <span class="workspace-savebar__status">{{ isDirty ? '规则有尚未保存的修改' : message || (needsReview ? '规则待核对' : '规则已保存') }}</span>
         <button class="workspace-btn" type="button" :disabled="saving || playingPreview || isDirty || !form.rotationConfig.undo" @click="undoRotation"><Undo2 :size="15" />撤销一次轮换</button>
         <button class="workspace-btn" type="button" :disabled="saving || playingPreview || invalidRules.length > 0 || (!isDirty && !needsReview)" @click="saveRules"><Save :size="15" />{{ needsReview ? '确认核对并保存' : '保存规则' }}</button>
         <button class="workspace-btn workspace-btn--primary" type="button" :disabled="saving || playingPreview || isDirty || needsReview || !form.rotationConfig.rules.length" @click="executeRotation"><Repeat2 :size="15" />执行轮换</button>
@@ -984,11 +981,11 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.rotation-danger { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 16px; padding: 20px; border: 2px solid #dc2626; border-left-width: 8px; background: #fff1f2; color: #991b1b; }
+.rotation-danger { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 12px 18px; border: 1px solid #dfcba7; border-radius: 10px; background: #fbf2de; color: #69471c; }
 .rotation-danger > svg { flex-shrink: 0; }
-.rotation-danger h2 { margin: 0 0 8px; font-size: 20px; font-weight: 700; }
-.rotation-danger p { margin: 4px 0; line-height: 1.6; }
-.rule-item--invalid { border-left: 3px solid #dc2626; background: #fff1f2; }
+.rotation-danger h2 { font-weight: 700; font-size: 14px; }
+.rotation-danger p { margin-top: 2px; font-size: 13px; }
+.rule-item--invalid .text-red-700 { display:block; margin-top:4px; font-size:12px; color:#973e28; }
 @media (max-width: 760px) {
   .workspace--rotate { padding-bottom: 170px; }
   .workspace-savebar { flex-wrap: wrap; }

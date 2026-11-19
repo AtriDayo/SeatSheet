@@ -1,14 +1,13 @@
-.workspace-title__actions { display:flex; align-items:center; flex-wrap:wrap; gap:14px; }
-.seat-print-overlay { position:fixed; inset:0; z-index:200; display:grid; place-items:center; padding:20px; background:#10232b99; }
-.seat-print-dialog { width:min(1120px,100%); max-height:calc(100dvh - 40px); display:flex; flex-direction:column; overflow:hidden; border:1px solid #dce5e5; border-radius:12px; background:#fff; color:#17272e; font-family:Inter,"Microsoft YaHei",sans-serif; }
+.seat-print-overlay { position:fixed; inset:0; z-index:200; display:grid; place-items:center; padding:20px; background:#1d24459c; }
+.seat-print-dialog { width:min(1120px,100%); max-height:calc(100dvh - 40px); display:flex; flex-direction:column; overflow:hidden; border:1px solid #dce5e5; border-radius:12px; background:#fff; color:var(--ink); font-family:Inter,"Microsoft YaHei",sans-serif; }
 .seat-print-toolbar { display:flex; justify-content:space-between; align-items:center; gap:14px; padding:18px 24px; }
 .seat-print-toolbar h2 { margin:0; font-size:20px; font-weight:600; }
 .seat-print-toolbar p { margin:5px 0 0; color:#667b82; font-size:13px; }
 .seat-print-options { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:10px 24px; border-top:1px solid #dce5e5; font-size:12px; }
 .seat-print-options label { display:flex; align-items:center; gap:7px; }
-.seat-print-options input { accent-color:#08796f; width:16px; height:16px; }
+.seat-print-options input { accent-color:var(--blue); width:16px; height:16px; }
 .seat-print-draft { color:#915f19; }
-.seat-print-preview { min-height:0; overflow:auto; padding:20px; background:#e9eff0; }
+.seat-print-preview { min-height:0; overflow:auto; padding:20px; background:#ecebe6; }
 .seat-print-stage { position:relative; margin:auto; width:100%; }
 .seat-print-paper { box-sizing:border-box; position:absolute; top:0; left:0; width:297mm; height:210mm; padding:20mm; background:#fff; color:#111; transform-origin:top left; box-shadow:0 2px 12px #10232b15; font-family:"Microsoft YaHei","Noto Sans SC",sans-serif; }
 .seat-print-paper.has-guides::after { content:""; position:absolute; inset:20mm; border:1px dashed #aaa; pointer-events:none; }

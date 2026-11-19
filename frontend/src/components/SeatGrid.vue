@@ -93,8 +93,9 @@ function aisleGridColumn(column: number) {
         <div
           v-for="cell in seatCells"
           :key="cell.key"
-          class="rounded-lg border border-stone-200 bg-white px-4 py-3 shadow-sm"
+          class="display-seat rounded-lg border border-stone-200 bg-white px-4 py-3 shadow-sm"
           :class="props.showStudentNo ? 'min-h-20' : 'min-h-24 flex items-center justify-center'"
+          :data-empty="!seatMap.get(cell.key)?.name && !seatMap.get(cell.key)?.studentNo"
           :style="{ gridColumn: cell.gridColumn, gridRow: cell.row + 1 }"
         >
           <template v-if="seatMap.get(cell.key)">

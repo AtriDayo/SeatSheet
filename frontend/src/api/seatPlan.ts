@@ -1,4 +1,7 @@
+import { ref } from "vue";
 import type { EditableSeatPlan, SeatPlan } from "../types/seat";
+
+export const lastConfirmedPlanName = ref("");
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000").replace(
   /\/$/,
@@ -32,8 +35,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function requestSeatPlan(init?: RequestInit) {
+  const plan = await request<SeatPlan>("/api/seat-plan", init);
+  lastConfirmedPlanName.value = plan.name;
+  return plan;
+}
+
 export function fetchSeatPlan() {
-  return request<SeatPlan>("/api/seat-plan");
+  return requestSeatPlan();
 }
 
 export function verifyAdminPassword(password: string) {
@@ -44,7 +53,7 @@ export function verifyAdminPassword(password: string) {
 }
 
 export function saveSeatPlan(plan: EditableSeatPlan & { expectedUpdatedAt: string }, adminPassword: string) {
-  return request<SeatPlan>("/api/seat-plan", {
+  return requestSeatPlan({
     method: "PUT",
     headers: {
       "X-Admin-Password": adminPassword

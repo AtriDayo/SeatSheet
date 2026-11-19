@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
-import { ArrowRight, Download, GripVertical, Printer, Save, Upload } from "@lucide/vue";
+import { PanelLeft, Download, GripVertical, Printer, Save, Upload } from "@lucide/vue";
 import AdminHeader from "../components/AdminHeader.vue";
 import AdminLogin from "../components/AdminLogin.vue";
 import SeatPrintDialog from "../components/SeatPrintDialog.vue";
-import { fetchSeatPlan, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
+import { fetchSeatPlan, lastConfirmedPlanName, saveSeatPlan, verifyAdminPassword } from "../api/seatPlan";
 import type { EditableSeatPlan, Seat } from "../types/seat";
 import { useAdminSession } from "../state/adminSession";
 import { deriveSeatGroups, deskPairColumnsForGroup } from "../utils/rotation";
 import { parseImportedSeatPlan } from "../utils/seatImport";
 import { swapSeatLines } from "../utils/seatSwap";
 
+const settingsOpen = ref(true);
 const loading = ref(true);
 const planLoaded = ref(false);
 const expectedUpdatedAt = ref("");
@@ -240,6 +241,7 @@ async function authenticate() {
 function leaveAdmin() {
   if (isDirty.value && !window.confirm("有尚未保存的座位修改，确定退出管理吗？")) return;
   clearAdminSession();
+  savedSnapshot.value = "";
   loginPassword.value = "";
   form.seats = [];
   clearSeatDrag();
@@ -573,33 +575,21 @@ onMounted(() => {
     :busy="authenticating" :error="error" @submit="authenticate" />
 
   <main v-else class="admin-page">
-    <AdminHeader :name="form.name" :dirty="isDirty" @logout="leaveAdmin" />
-    <div class="workspace-title">
-      <div>
-        <div class="workspace-title__heading">
-          <h1>座位编辑</h1>
-          <RouterLink class="workspace-title__link" to="/rotate">
-            轮换规则 <ArrowRight :size="15" aria-hidden="true" />
-          </RouterLink>
-        </div>
-        <p>管理班级布局与座位名单</p>
-      </div>
-      <div class="workspace-title__actions">
-        <span class="workspace-title__meta">{{ form.rows }} 排 · {{ form.columns }} 列 · {{ form.seats.length }} 座</span>
-        <button class="workspace-btn" type="button" :disabled="!planLoaded || loading || saving || dimensionsDirty"
-          :title="dimensionsDirty ? '请先应用布局后打印' : '按讲台视角打印 A4 座位表'" @click="openPrintPreview">
-          <Printer :size="16" aria-hidden="true" />打印座位表
-        </button>
-      </div>
-    </div>
-
+    <AdminHeader :name="planLoaded ? form.name : lastConfirmedPlanName" :dirty="isDirty" @logout="leaveAdmin">
+      <template #summary><span v-if="planLoaded" class="workspace-title__meta">{{ form.rows }} 排 · {{ form.columns }} 列 · {{ form.seats.length }} 座</span></template>
+      <button v-if="planLoaded" class="workspace-btn" type="button" aria-controls="layout-settings" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><PanelLeft :size="16" />{{ settingsOpen ? "收起设置" : "展开设置" }}</button>
+      <button class="workspace-btn" type="button" :disabled="!planLoaded || loading || saving || dimensionsDirty"
+        :title="dimensionsDirty ? '请先应用布局后打印' : '按讲台视角打印 A4 座位表'" @click="openPrintPreview">
+        <Printer :size="16" aria-hidden="true" />打印座位表
+      </button>
+    </AdminHeader>
     <div v-if="loading" class="workspace-loading">正在加载座位表…</div>
     <div v-else-if="!planLoaded" class="workspace-error" role="alert">
       <p>{{ error || '座位表加载失败，已停止编辑以保护原有数据。' }}</p>
       <button class="workspace-btn" type="button" @click="loadPlan">重新加载</button>
     </div>
-    <form v-else class="workspace workspace--config" @submit.prevent="submit">
-      <aside class="workspace-sidebar">
+    <form v-else class="workspace workspace--config" :class="{ 'settings-closed': !settingsOpen }" @submit.prevent="submit">
+      <aside v-show="settingsOpen" id="layout-settings" class="workspace-sidebar">
         <section class="workspace-section">
           <h2>基本信息</h2>
           <label class="workspace-field">
@@ -640,7 +630,7 @@ onMounted(() => {
             </div>
           </div>
           <label class="workspace-toggle">
-            显示学号
+            在座位图中显示学号
             <input v-model="form.showStudentNo" type="checkbox" />
           </label>
         </section>
