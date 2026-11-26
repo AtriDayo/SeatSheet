@@ -1,0 +1,62 @@
+@import "../workbench.css";
+
+:root {
+  color: #111827;
+  background: #f7f7f4;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.vertical-rl {
+  writing-mode: vertical-rl;
+}
+
+.rotation-danger { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 12px 18px; border: 1px solid #dfcba7; border-radius: 10px; background: #fbf2de; color: #69471c; }
+.rotation-danger > svg { flex-shrink: 0; }
+.rotation-danger h2 { font-weight: 700; font-size: 14px; }
+.rotation-danger p { margin-top: 2px; font-size: 13px; }
+.rule-item--invalid .rule-issue { display:block; margin-top:4px; font-size:12px; color:#973e28; }
+@media (max-width: 760px) {
+  .workspace--rotate { padding-bottom: 170px; }
+  .workspace--rotate .workspace-savebar { flex-wrap: wrap; }
+  .workspace--rotate .workspace-savebar__status { flex-basis: 100%; }
+  .workspace--rotate .workspace-savebar > button { flex: 1 1 140px; }
+  .rotation-danger { gap: 10px; padding: 14px; }
+  .rotation-danger h2 { font-size: 18px; }
+}
+.preview-unit-move {
+  transition: transform 940ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.eyebrow { display: none; }
+.workspace--config {
+  --editor-desk-width: 8rem;
+  --row-label-width: 3rem;
+  --aisle-width: 2rem;
+}
+.workspace--rotate {
+  --preview-desk-width: clamp(6rem, 8vw, 8rem);
+  --aisle-width: 2rem;
+}
+.preview-seat {
+  @apply rounded-lg border border-stone-200 bg-white shadow-sm transition-[transform,opacity,box-shadow,border-color,background-color] duration-[900ms] ease-in-out will-change-transform;
+}
+.preview-seat.is-highlighted {
+  @apply scale-[1.04] border-stone-950 ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100;
+}
+.preview-seat.is-highlighted.z-20 { @apply bg-amber-50 shadow-xl; }
+.preview-seat.is-highlighted.z-30 { @apply bg-white shadow-2xl; }
+.preview-seat-number { @apply text-stone-500; }

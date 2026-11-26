@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isEndfield } from "../state/appearance";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import { AlertTriangle, ChevronDown, ChevronUp, Play, Plus, Repeat2, RotateCcw, Save, Trash2, Undo2 } from "@lucide/vue";
@@ -83,7 +84,7 @@ function ruleTitle(rule: RotationRule) {
 }
 function ruleSummary(rule: RotationRule) {
   if (rule.type === "groupSwap") return `大组 ${rule.sourceGroupIndex + 1} ↔ 大组 ${rule.targetGroupIndex + 1}`;
-  if (rule.type === "groupCycle") return `大组 ${rule.groupIndex + 1} · ${rule.direction === "forward" ? "向后" : "向前"} ${rule.steps} 排`;
+  if (rule.type === "groupCycle") return `大组 ${rule.groupIndex + 1} / ${rule.direction === "forward" ? "向后" : "向前"} ${rule.steps} 排`;
   return `${rule.sourceRow + 1} 排 ${rule.sourceColumn + 1} 列 ↔ ${rule.targetRow + 1} 排 ${rule.targetColumn + 1} 列`;
 }
 
@@ -185,10 +186,10 @@ const previewGridTemplateColumns = computed(() => {
   const tracks: string[] = [];
 
   for (let column = 0; column < form.columns; column += 1) {
-    tracks.push("clamp(6rem, 8vw, 8rem)");
+    tracks.push("var(--preview-desk-width)");
 
     if (previewAisleColumnSet.value.has(column)) {
-      tracks.push("2rem");
+      tracks.push("var(--aisle-width)");
     }
   }
 
@@ -646,18 +647,18 @@ function previewButtonText() {
 
 function previewPhaseClass(unit: PreviewUnit) {
   if (!isPreviewUnitActive(unit)) {
-    return "border-stone-200 bg-white";
+    return "";
   }
 
   if (previewPhase.value === "highlight") {
-    return "z-20 scale-[1.04] border-stone-950 bg-amber-50 shadow-xl ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100";
+    return "is-highlighted z-20";
   }
 
   if (previewPhase.value === "move") {
-    return "z-30 scale-[1.04] border-stone-950 bg-white shadow-2xl ring-2 ring-stone-950 ring-offset-2 ring-offset-stone-100";
+    return "is-highlighted z-30";
   }
 
-  return "border-stone-200 bg-white";
+  return "";
 }
 
 function inactivePreviewClass(unit: PreviewUnit) {
@@ -678,7 +679,7 @@ function activeSeatStudentNo(seat: Seat) {
 
 function previewUnitClass(unit: PreviewUnit) {
   return [
-    "relative min-h-[5.5rem] min-w-0 rounded-lg border bg-white p-2 shadow-sm transition-[transform,opacity,box-shadow,border-color,background-color] duration-[900ms] ease-in-out will-change-transform",
+    "preview-seat relative min-h-[5.5rem] min-w-0 p-2",
     previewPhaseClass(unit),
     inactivePreviewClass(unit)
   ].join(" ");
@@ -689,11 +690,11 @@ function previewUnitGridClass(unit: PreviewUnit) {
 }
 
 function previewSeatTitleClass() {
-  return form.showStudentNo ? "truncate text-base font-medium text-stone-950" : "flex h-full items-center justify-center text-center text-xl font-medium leading-7 text-stone-950";
+  return form.showStudentNo ? "truncate text-base font-medium" : "flex h-full items-center justify-center text-center text-xl font-medium leading-7";
 }
 
 function previewSeatNoClass() {
-  return "mt-1 truncate text-sm text-stone-500";
+  return "mt-1 truncate text-sm preview-seat-number";
 }
 
 function previewStatusText() {
@@ -847,16 +848,17 @@ onUnmounted(() => {
     </div>
     <div v-else class="workspace workspace--rotate">
       <section v-if="needsReview" class="rotation-danger" role="alert">
-        <AlertTriangle :size="20" aria-hidden="true" />
+        <AlertTriangle :size="isEndfield ? 30 : 20" aria-hidden="true" />
         <div>
-          <h2>轮换已暂停，规则待核对</h2>
-          <p v-if="invalidRules.length">请修正列表中标出的 {{ invalidRules.length }} 条规则，再确认核对并保存。</p>
-          <p v-else>教室布局已变化，请逐条核对规则并保存后执行。</p>
+          <span class="eyebrow" aria-hidden="true">// ROTATION PAUSED</span>
+          <h2>{{ isEndfield ? "轮换已暂停" : "轮换已暂停，规则待核对" }}</h2>
+          <p v-if="invalidRules.length">请修正「执行顺序」中标出的 <strong>{{ invalidRules.length }}</strong> 条规则，再点「确认核对并保存」。</p>
+          <p v-else>教室布局已变化。请逐条核对规则，再点「确认核对并保存」。</p>
         </div>
       </section>
       <aside class="workspace-sidebar">
         <section class="workspace-section">
-          <h2>添加规则</h2>
+          <span class="eyebrow">// ROTATION RULES</span><h2>添加规则</h2>
           <div class="rule-add-actions">
             <button class="workspace-btn" type="button" @click="addGroupSwapRule"><Plus :size="14" />大组互换</button>
             <button class="workspace-btn" type="button" @click="addGroupCycleRule"><Plus :size="14" />环形轮换</button>
@@ -870,10 +872,10 @@ onUnmounted(() => {
             <div v-for="(rule, index) in form.rotationConfig.rules" :key="rule.id" class="rule-item"
               :class="{ 'is-selected': selectedRuleId === rule.id, 'rule-item--invalid': invalidRules.includes(rule) }">
               <span class="rule-item__number">{{ index + 1 }}.</span>
-              <button class="rule-item__body" type="button" @click="selectedRuleId = rule.id">
+              <button class="rule-item__body" :aria-pressed="selectedRuleId === rule.id" type="button" @click="selectedRuleId = rule.id">
                 <span class="rule-item__title">{{ ruleTitle(rule) }}</span>
                 <span class="rule-item__summary">{{ ruleSummary(rule) }}</span>
-                <span v-if="invalidRules.includes(rule)" class="text-red-700">{{ ruleIssue(rule) }}</span>
+                <span v-if="invalidRules.includes(rule)" class="rule-issue">{{ ruleIssue(rule) }}</span>
               </button>
               <div class="rule-item__tools">
                 <button type="button" title="上移规则" aria-label="上移规则" :disabled="index === 0" @click="moveRule(rule.id, -1)"><ChevronUp :size="15" /></button>
@@ -881,12 +883,12 @@ onUnmounted(() => {
                 <button type="button" title="删除规则" aria-label="删除规则" @click="removeRule(rule.id)"><Trash2 :size="15" /></button>
               </div>
             </div>
-            <p v-if="!form.rotationConfig.rules.length" class="rule-empty">还没有规则</p>
+            <p v-if="!form.rotationConfig.rules.length" class="rule-empty">添加的轮换规则会按执行顺序显示在这里。</p>
           </div>
         </section>
 
         <section v-if="selectedRule" class="workspace-section rule-editor">
-          <h2>{{ ruleTitle(selectedRule) }} · 参数</h2>
+          <h2>{{ ruleTitle(selectedRule) }} / 参数</h2>
           <template v-if="selectedRule.type === 'groupSwap'">
             <label class="workspace-field"><span>来源大组</span>
               <select v-model.number="selectedRule.sourceGroupIndex" class="workspace-input">
@@ -934,8 +936,8 @@ onUnmounted(() => {
 
       <section class="workspace-stage rule-preview">
         <div class="stage-heading">
-          <div><h2>动态预览</h2><p>{{ activePreviewLabel }} · {{ previewStatusText() }}</p></div>
-          <span class="stage-badge">{{ form.rows }} 排 · {{ form.columns }} 列</span>
+          <div><span class="eyebrow">// ROTATION PREVIEW</span><h2>动态预览</h2><p>{{ activePreviewLabel }} / {{ previewStatusText() }}</p></div>
+          <span class="stage-badge">{{ form.rows }} 排 / {{ form.columns }} 列</span>
         </div>
         <div class="rule-preview__toolbar">
           <div class="workspace-button-row">
@@ -956,7 +958,7 @@ onUnmounted(() => {
                 :style="{ gridColumn: previewAisleGridColumn(column), gridRow: `1 / span ${form.rows}` }"><span>过道</span></div>
               <div v-for="unit in previewUnits" :key="unit.key" :class="previewUnitClass(unit)" :style="previewUnitStyle(unit)">
                 <div :class="previewUnitGridClass(unit)">
-                  <div v-for="(seat, seatIndex) in unit.seats" :key="`${unit.key}:${seatIndex}`" class="min-w-0 rounded-md px-1"
+                  <div v-for="(seat, seatIndex) in unit.seats" :key="`${unit.key}:${seatIndex}`" class="min-w-0 px-1"
                     :class="form.showStudentNo ? '' : 'flex h-full items-center justify-center'">
                     <div :class="previewSeatTitleClass()">{{ activeSeatName(seat) }}</div>
                     <div v-if="form.showStudentNo && (seat.name || seat.studentNo)" :class="previewSeatNoClass()">{{ activeSeatStudentNo(seat) }}</div>
@@ -979,22 +981,3 @@ onUnmounted(() => {
     </div>
   </main>
 </template>
-
-<style scoped>
-.rotation-danger { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 12px 18px; border: 1px solid #dfcba7; border-radius: 10px; background: #fbf2de; color: #69471c; }
-.rotation-danger > svg { flex-shrink: 0; }
-.rotation-danger h2 { font-weight: 700; font-size: 14px; }
-.rotation-danger p { margin-top: 2px; font-size: 13px; }
-.rule-item--invalid .text-red-700 { display:block; margin-top:4px; font-size:12px; color:#973e28; }
-@media (max-width: 760px) {
-  .workspace--rotate { padding-bottom: 170px; }
-  .workspace-savebar { flex-wrap: wrap; }
-  .workspace-savebar__status { flex-basis: 100%; }
-  .workspace-savebar > button { flex: 1 1 140px; }
-  .rotation-danger { gap: 10px; padding: 14px; }
-  .rotation-danger h2 { font-size: 18px; }
-}
-.preview-unit-move {
-  transition: transform 940ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-</style>

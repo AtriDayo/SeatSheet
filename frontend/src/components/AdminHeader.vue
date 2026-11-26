@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isEndfield } from "../state/appearance";
 import { Eye, LogOut } from "@lucide/vue";
 
 defineProps<{
@@ -10,12 +11,13 @@ defineEmits<{ logout: [] }>();
 </script>
 
 <template>
-  <header class="workspace-title">
-    <div class="workspace-identity">
+  <header class="workspace-title page-heading">
+    <div class="workspace-identity page-heading__title">
+      <span class="eyebrow">{{ $route.path === "/rotate" ? "// ROTATION RULES" : "// SEAT EDITOR" }}</span>
       <h1 class="header-class">{{ name || "座位管理" }}</h1>
       <slot name="summary" />
     </div>
-    <nav class="workspace-nav" aria-label="管理导航">
+    <nav v-if="!isEndfield" class="workspace-nav" aria-label="管理导航">
       <RouterLink to="/config">座位编辑</RouterLink>
       <RouterLink to="/rotate">轮换规则</RouterLink>
     </nav>
@@ -26,6 +28,7 @@ defineEmits<{ logout: [] }>();
       >
       <RouterLink
         class="admin-header__icon"
+        :class="{ 'workspace-btn': isEndfield }"
         to="/"
         title="返回展示页"
         aria-label="返回展示页"
@@ -34,6 +37,7 @@ defineEmits<{ logout: [] }>();
       </RouterLink>
       <button
         class="admin-header__icon"
+        :class="{ 'workspace-btn': isEndfield }"
         type="button"
         title="退出管理"
         aria-label="退出管理"

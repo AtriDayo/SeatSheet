@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppearanceSelect from "../components/AppearanceSelect.vue";
+import { columnLabel } from "../utils/columnLabel";
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import { PanelLeft, Download, GripVertical, Printer, Save, Upload } from "@lucide/vue";
@@ -117,25 +119,21 @@ const configGridTemplateColumns = computed(() => {
   const tracks: string[] = [];
 
   for (let column = 0; column < form.columns; column += 1) {
-    tracks.push("8rem");
+    tracks.push("var(--editor-desk-width)");
 
     if (deskPairStartColumnSet.value.has(column)) {
       tracks.push("0.75rem");
     }
 
     if (aisleColumnSet.value.has(column)) {
-      tracks.push("2rem");
+      tracks.push("var(--aisle-width)");
     }
   }
 
-  return ["3rem", ...tracks].join(" ");
+  return ["var(--row-label-width)", ...tracks].join(" ");
 });
 
 const configGridTemplateRows = computed(() => `2rem repeat(${form.rows}, auto)`);
-
-function columnLabel(column: number) {
-  return column < 26 ? String.fromCharCode(65 + column) : `A${String.fromCharCode(65 + column - 26)}`;
-}
 
 function seatKey(seat: Pick<Seat, "row" | "column">) {
   return `${seat.row}:${seat.column}`;
@@ -576,7 +574,7 @@ onMounted(() => {
 
   <main v-else class="admin-page">
     <AdminHeader :name="planLoaded ? form.name : lastConfirmedPlanName" :dirty="isDirty" @logout="leaveAdmin">
-      <template #summary><span v-if="planLoaded" class="workspace-title__meta">{{ form.rows }} 排 · {{ form.columns }} 列 · {{ form.seats.length }} 座</span></template>
+      <template #summary><span v-if="planLoaded" class="workspace-title__meta">{{ form.rows }} 排 / {{ form.columns }} 列 / {{ form.seats.length }} 座</span></template>
       <button v-if="planLoaded" class="workspace-btn" type="button" aria-controls="layout-settings" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><PanelLeft :size="16" />{{ settingsOpen ? "收起设置" : "展开设置" }}</button>
       <button class="workspace-btn" type="button" :disabled="!planLoaded || loading || saving || dimensionsDirty"
         :title="dimensionsDirty ? '请先应用布局后打印' : '按讲台视角打印 A4 座位表'" @click="openPrintPreview">
@@ -591,7 +589,7 @@ onMounted(() => {
     <form v-else class="workspace workspace--config" :class="{ 'settings-closed': !settingsOpen }" @submit.prevent="submit">
       <aside v-show="settingsOpen" id="layout-settings" class="workspace-sidebar">
         <section class="workspace-section">
-          <h2>基本信息</h2>
+          <span class="eyebrow">// PLAN DETAILS</span><h2>基本信息</h2>
           <label class="workspace-field">
             <span>座位表名称</span>
             <input v-model="form.name" class="workspace-input" maxlength="80" required />
@@ -643,12 +641,13 @@ onMounted(() => {
           </div>
           <input ref="importFileInput" class="hidden" type="file" accept="application/json,.json" @change="importJson" />
         </section>
+        <AppearanceSelect />
       </aside>
 
       <section class="workspace-stage">
         <div class="stage-heading">
           <div>
-            <h2>座位图</h2>
+            <span class="eyebrow">// FLOOR PLAN</span><h2>座位图</h2>
             <p>第 1 排为前方</p>
           </div>
           <span class="stage-badge">{{ form.aisleAfterColumns.length }} 条过道</span>
@@ -706,7 +705,7 @@ onMounted(() => {
                 @drop.prevent="dropOnSeat(seat)">
                 <div class="editor-seat__handle" draggable="true" title="拖动以交换座位"
                   @dragstart="startSeatDrag(seat, $event)" @dragend="clearSeatDrag">
-                  {{ seat.row + 1 }} 排 · {{ seat.column + 1 }} 列
+                  {{ seat.row + 1 }} 排 / {{ seat.column + 1 }} 列
                 </div>
                 <input v-model="seat.name" :aria-label="`第 ${seat.row + 1} 排第 ${seat.column + 1} 列姓名`" placeholder="姓名" />
                 <input v-model="seat.studentNo" :aria-label="`第 ${seat.row + 1} 排第 ${seat.column + 1} 列学号`" placeholder="学号" />

@@ -110,7 +110,7 @@ onBeforeUnmount(() => {
     <div class="seat-print-overlay" @click.self="emit('close')">
       <section ref="dialog" class="seat-print-dialog" role="dialog" aria-modal="true" aria-labelledby="seat-print-title">
         <header class="seat-print-toolbar">
-          <div><h2 id="seat-print-title">打印座位表</h2><p>讲台视角 · A4 横向 · 白底 · 四边留白 2 cm</p></div>
+          <div><span class="eyebrow">// PRINT PREVIEW</span><h2 id="seat-print-title">打印座位表</h2><p>讲台视角 / A4 横向 / 白底 / 四边留白 2 cm</p></div>
           <button ref="closeButton" type="button" class="workspace-btn" aria-label="关闭打印预览" @click="emit('close')"><X :size="18" aria-hidden="true" /></button>
         </header>
         <div class="seat-print-options">
@@ -122,8 +122,8 @@ onBeforeUnmount(() => {
             <article ref="paper" class="seat-print-paper" :class="{ 'has-guides': guides }" :style="{ transform: `scale(${scale})` }" aria-label="讲台视角座位表打印内容">
               <div class="seat-print-layout">
                 <header class="seat-print-heading">
-                  <h1 :style="{ fontSize: plan.name.length > 36 ? '13pt' : '20pt' }">{{ plan.name || '座位表' }} · 座位表</h1>
-                  <p>{{ plan.rows }} 排 × {{ plan.columns }} 列 · {{ occupied }} 人</p>
+                  <h1 :style="{ fontSize: plan.name.length > 36 ? '13pt' : '20pt' }">{{ plan.name || '座位表' }} / 座位表</h1>
+                  <p>{{ plan.rows }} 排 × {{ plan.columns }} 列 / {{ occupied }} 人</p>
                 </header>
                 <div class="seat-print-rear">教室后方</div>
                 <div class="seat-print-classroom" :class="`door-${layout.doorSide}`">
@@ -136,7 +136,7 @@ onBeforeUnmount(() => {
                     </div>
                   </div>
                 </div>
-                <div class="seat-print-platform">讲台 · 教师站位</div>
+                <div class="seat-print-platform">讲台 / 教师站位</div>
               </div>
             </article>
           </div>
